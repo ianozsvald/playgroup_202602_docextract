@@ -1,0 +1,7 @@
+# docintel allows us OCR to extract markdown from PDFs
+#azure-ai-documentintelligence==1.0.2 
+python-dotenv
+openai
+pytest
+pre-commit
+pytest-cov
