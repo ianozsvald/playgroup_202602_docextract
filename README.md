@@ -18,7 +18,23 @@ In `data` we have
 * `playgroup_dev_expected.tsv` based on `expected.tsv`
 * `pdf_names.txt` which lists each pdf name in the same order as `in|expected.tsv` files.
 
+# Tasks
 
+Here you have a handful of shorter PDFs. Imagine you have 1000s of varying lengths (up to 200 pages) - you want a fast and _inexpensive_ solution that'll scale. What's the best system you can build, without using super-expensive frontier models, that might scale? Where are the limits?
+
+* run `llm_router.py` and check it is working with your `.env`
+* run `extract_and_prompt_example.py` to check a prompt works and something is extracted
+* you want to extract
+  * charity number
+  * reporting date (YYYY-MM-DD)
+  * annual income (GBP) for the most recent year
+  * annual outgoings (GBP) for the most recent year
+  * post code for the charity address
+  * other fields are a bonus
+* ...
+* build an extractor for the input files that generates an output file similar to `playgroup_dev_expected.tsv` maybe called `playgroup_dev_extracted.tsv`
+* either try their evaluation (https://github.com/applicaai/kleister-charity?tab=readme-ov-file#evaluation) or build your own
+  * consider how close everything should be
 
 # License
 

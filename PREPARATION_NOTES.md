@@ -12,7 +12,7 @@ dev-0$ xz -d in.tsv.xz # uncompress input data
 
 $ cd dev-0
 # extract the identified dev-0 good-looking examples
-export ROWS='4p;5p;11p' # first identify the rows we need to process
+export ROWS='4p;5p;6p;7p;11p' # first identify the rows we need to process
 export DATA_FOLDER='/home/ian/workspace/personal/playgroup/playgroup_202602_docextract/data'
 
 # extract only the relevant items of input and gold standard data
