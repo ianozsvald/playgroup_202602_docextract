@@ -1,2 +1,5 @@
+__pycache__
+llm_calls.log
 brief.md
 .env
+playgroup_email.txt

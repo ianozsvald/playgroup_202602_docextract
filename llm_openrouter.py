@@ -1,9 +1,16 @@
 import json
+import logging
 import os
 
 from dotenv import load_dotenv
 from openai import OpenAI
 import utils
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+_fh = logging.FileHandler("llm_calls.log")
+_fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+logger.addHandler(_fh)
 
 load_dotenv()
 
@@ -35,13 +42,13 @@ def call_llm(model_name, prompt_template, extracted_text):
     instructions = "Follow the instructions in the prompt template.\n"
     prompt = prompt_template + extracted_text
 
-    print(prompt)
+    logger.info("Prompt:\n%s", prompt)
     # NOTE we need 'only_providers' to be set otherwise
     # openroute will fall back on other providers with different configurations
     # and quantization levels and we'll get inconsistent results
     only_providers = _get_providers(model_name)
     extra_params = {"provider": {"allow_fallbacks": False, "only": only_providers}}
-    print(f"LLM calling with {model_name}")
+    logger.info("LLM calling with %s", model_name)
     # extra_params = {}
     while True:
         try:
@@ -53,21 +60,22 @@ def call_llm(model_name, prompt_template, extracted_text):
             )
             break  # jump out if we're successful
         except json.JSONDecodeError:
-            print("Oops, got a JSONDecodeError after calling LLM")
+            logger.warning("Oops, got a JSONDecodeError after calling LLM")
 
-    print(f"Raw return from llm call:\n{response.output_text}")
+    logger.info("Raw return from llm call:\n%s", response.output_text)
     extracted = utils.extract_from_triple_backticks(response.output_text)
-    print(f"Extracted answer:\n{extracted}")
+    logger.info("Extracted answer:\n%s", extracted)
     return extracted
 
 
 if __name__ == "__main__":
-    print(f"Openrouter API key: {os.getenv('OPENROUTER_API_KEY')}")
+    print("Openrouter API key: %s", os.getenv('OPENROUTER_API_KEY')[:10] + "...")
 
     #model_name = "deepseek/deepseek-v3.2-speciale"
     #model_name = "z-ai/glm-4.7"  # slow
     #model_name = "anthropic/claude-3-haiku" # failed to give the right answer to the q below
-    model_name = "xanthropic/claude-3.5-haiku"
+    model_name = "anthropic/claude-3.5-haiku"
+    print(f"Using model: {model_name}")
 
     prompt_template = """
     You are an expert at extracting information from UK charity financial documents.
@@ -89,7 +97,8 @@ if __name__ == "__main__":
     "THE SANATA CHARITABLE TRUST\\nCompany Registration Number:\\n06999163\\n(England and Wales)\\nRegistered Charity Number\\n1132766\\nTrustees' Report and Unaudited Financial Statements\\nFor the Sixteen Month"
     """
 
-    call_llm(model_name,
+    extracted = call_llm(model_name,
              prompt_template,
              extracted_text
     )
+    print(extracted)
