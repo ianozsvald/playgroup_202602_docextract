@@ -33,8 +33,10 @@ Here you have a handful of shorter PDFs. Imagine you have 1000s of varying lengt
   * other fields are a bonus
 * ...
 * build an extractor for the input files that generates an output file similar to `playgroup_dev_expected.tsv` maybe called `playgroup_dev_extracted.tsv`
-* either try their evaluation (https://github.com/applicaai/kleister-charity?tab=readme-ov-file#evaluation) or build your own
+* try `scorer.py` (it is a simple Accuracy based scorer, hardcoded filenames, very simple)
+* either try their evaluation (https://github.com/applicaai/kleister-charity?tab=readme-ov-file#evaluation) or modify `scorer.py`
   * consider how close everything should be
+  * maybe we want a different metric like BLEU on some fields? We should discuss
 
 # License
 
