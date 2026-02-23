@@ -12,9 +12,11 @@ dev-0$ xz -d in.tsv.xz # uncompress input data
 
 $ cd dev-0
 # extract the identified dev-0 good-looking examples
-export ROWS='4p;5p;6p;7p;11p' # first identify the rows we need to process
+export ROWS='4p;5p;6p;7p;11p;15p;18p' # first identify the rows we need to process
 export DATA_FOLDER='/home/ian/workspace/personal/playgroup/playgroup_202602_docextract/data'
+export BENCHMARK_FOLDER='/media/ian/data/playgroup_datasets/kleister-charity/dev-0'
 
+cd $BENCHMARK_FOLDER
 # extract only the relevant items of input and gold standard data
 sed -n $ROWS in.tsv > playgroup_dev_in.tsv
 sed -n $ROWS expected.tsv > playgroup_dev_expected.tsv
@@ -40,20 +42,25 @@ a84c1c7a3e570a716f6c61de557b5ff1.pdf, 18, 5, clean, Y
 34646877386855695219579059c07302.pdf, 9, 5, scan, Y
 bc1881761cdd5edf2d7e5c12958a82f2.pdf, 5, 5, scan, Y
 48ec2c34cf13f32eb56baea66dbb665d.pdf, 46
-00151bc74f2d59cecbed12e0d607a8e4.pdf, 20
-cc9880ece943bf688b49359a8c219b04.pdf
+00151bc74f2d59cecbed12e0d607a8e4.pdf, 20 (error in gold standard postcode)
+cc9880ece943bf688b49359a8c219b04.pdf, 40, , slightly harder?
 7d56c6cc848666198c050855dbb16092.pdf, 12, 5, scanned, Y
-bfd08fe466e142006e4a04e9630d4579.pdf
-c1e453df06418b5289b40d04729a09c5.pdf
-44ba842bbbd4f18587ad8ae3fe4ecdd7.pdf
-6f9b8f27fd43be13d822c0b4654be167.pdf
-556ee39a83d9a15738918e8e60dc45a7.pdf
-cfe956d594cd45a0267d966dadebf72e.pdf
-cc19e4fd0c4a605a7f537050df52483e.pdf
+bfd08fe466e142006e4a04e9630d4579.pdf, 39, , USD?! (includes GBP/USD but that seems silly?)
+c1e453df06418b5289b40d04729a09c5.pdf, 18, clean
+44ba842bbbd4f18587ad8ae3fe4ecdd7.pdf, 54, 5, scan, HARD-Y
+6f9b8f27fd43be13d822c0b4654be167.pdf, 6, , could have been good 'this year last year' but has a typo in gold std Y(needs fix)
+556ee39a83d9a15738918e8e60dc45a7.pdf, 20, 5, clean, HARD-Y
+cfe956d594cd45a0267d966dadebf72e.pdf, 72, 5, clean, HARD-Y (000 summary of numbers)
+cc19e4fd0c4a605a7f537050df52483e.pdf, 15, 5, scan (offset), EASY-Y
 0d45add2d94d80a0eb85e41e22aa43a0.pdf
 762f74d04c9fd0a99b2776603704267b.pdf
 
 ```
+
+## Fixes
+
+`Hitchin_Education_Foundation charity_number` needs postcode SG18_9N4 -> SG18_9NR.
+`Yorkshire_Federation_Of_Young_Farmers'_Clubs` needs an incoming funds of 107771.00 -> 107711.00 
 
 # Things we could test
 
