@@ -1,46 +1,157 @@
+# UK Charity Document Extraction — Multi-Model Benchmark
 
-# Setup
+Extract structured fields from UK charity financial PDFs using LLMs via [OpenRouter](https://openrouter.ai/), then score and rank the results across 40+ models.
 
-Read `QUICKSTART.md` to get going.
+---
 
-You should be able to run
-* `llm_openrouter.py` and it'll try to extract a fact from a canned bit of text. If this works and you get some JSON, you're in a good state.
-* `extraction_and_prompt_example.py` and it'll read the input tsv (see below), run a simple prompt and extract something.
+## Setup
 
-# What's here
+See [`QUICKSTART.md`](QUICKSTART.md) for the full pre-event setup checklist (Python version check, venv, pip install, `.env` with OpenRouter API key).
 
-Locally you've got a small export from the much larger https://github.com/applicaai/kleister-charity# dataset. I've taken a small set of PDFs and the relevant exports of text that they've provided (using djvu2hocr, tesseract 4.11, tesseract from march 2020, a combination of all 3). The chosen pdfs come from the `dev-0` folder. 
+---
 
-The PDFs start smaller (<= 20 pages) and get bigger towards the end of the set.
+## Smoke Test
 
-The PDFs are drawn from a heterogenous collection of UK charity financial documents, from a corpus of circa 3,000 documents of length up to 200 pages.
+Verify your setup works before running anything else:
 
-In `data` we have
-* `playgroup_dev_in.tsv` based on `in.tsv`
-* `playgroup_dev_expected.tsv` based on `expected.tsv`
-* `pdf_names.txt` which lists each pdf name in the same order as `in|expected.tsv` files.
+```bash
+python llm_openrouter.py
+```
 
-# Tasks
+Expected output — a JSON block with a charity number extracted from canned text:
 
-Here you have a handful of shorter PDFs. Imagine you have 1000s of varying lengths (up to 200 pages) - you want a fast and _inexpensive_ solution that'll scale. What's the best system you can build, without using super-expensive frontier models, that might scale? Where are the limits?
+```json
+{"Registered Charity Number": "1132766"}
+```
 
-* run `llm_router.py` and check it is working with your `.env`
-* run `extract_and_prompt_example.py` to check a prompt works and something is extracted
-* you want to extract
-  * charity number
-  * reporting date (YYYY-MM-DD)
-  * annual income (GBP) for the most recent year
-  * annual outgoings (GBP) for the most recent year
-  * post code for the charity address
-  * other fields are a bonus
-* ...
-* build an extractor for the input files that generates an output file similar to `playgroup_dev_expected.tsv` maybe called `playgroup_dev_extracted.tsv`
-* try `score.py` (it is a simple Accuracy based scorer, hardcoded filenames, very simple)
-* either try their evaluation (https://github.com/applicaai/kleister-charity?tab=readme-ov-file#evaluation) or modify `score.py`
-  * consider how close everything should be
-  * `geval` with BLEU, WER (word error rate), CER (character error rate) etc is pretty interesting
-  * maybe we want a different metric like BLEU on some fields? We should discuss
+---
 
-# License
+## End-to-End Workflow
 
-* The data is UK open data see https://github.com/applicaai/kleister-charity/issues/2
+### 1. Try a simple prompt on the dataset
+
+```bash
+python extraction_and_prompt_example.py
+```
+
+Reads `data/playgroup_dev_in.tsv`, sends each row to `claude-3.5-haiku`, and prints the raw extracted JSON. Good for experimenting with prompts.
+
+### 2. Run extraction across one or more models
+
+Pass one or more model names as arguments, or omit to run all models. Runs are idempotent — if the output file already exists for a model, that model is skipped.
+
+```bash
+# One model
+python extractor.py gemini-2.0-flash
+
+# Several models
+python extractor.py gemini-2.0-flash deepseek-v3 llama-3.3-70b-free
+
+# All models in config_models.py (skips any already completed)
+python extractor.py
+```
+
+Each run writes `data/playgroup_dev_extracted__<model-name>.tsv` and appends a row to `data/extraction_stats.csv` (row counts and per-field hit rates).
+
+### 3. Score and rank all models
+
+Pass a filename to see a verbose field-by-field diff for one model, or omit to score all extracted files and print a ranked leaderboard.
+
+```bash
+# Ranked leaderboard across all extracted files
+python score.py
+
+# Verbose diff for one model
+python score.py data/playgroup_dev_extracted__gemini-2.0-flash.tsv
+```
+
+The leaderboard output looks like:
+
+```
+Model                     Mod    Score        %
+----------------------------------------------------
+gemini-2.5-flash          MM      87/110   79.1%
+gemini-2.0-flash          MM      85/110   77.3%
+deepseek-v3               text    81/110   73.6%
+...
+```
+
+---
+
+## What's in This Repo
+
+### Scripts
+
+| File | Purpose |
+|---|---|
+| `llm_openrouter.py` | Low-level LLM client (OpenRouter API). Run directly for a smoke test. |
+| `extraction_and_prompt_example.py` | Simple single-model extraction loop, good for prompt experiments. |
+| `extractor.py` | Main extraction runner. Pass model name(s) as args to run specific models; no args runs all models idempotently (skips completed). |
+| `score.py` | Scorer. No args → ranked leaderboard across all extracted files. Pass a filename → verbose field-by-field diff for that model. |
+| `utils.py` | Shared helpers (`extract_from_triple_backticks`, etc.). |
+| `config_models.py` | Model registry — 40+ models organised by tier. |
+| `playground.py` | Ad-hoc experiments. |
+
+### Model Tiers (`config_models.py`)
+
+Models are grouped into four tiers by cost (per million input tokens):
+
+| Tier | Cost | Examples |
+|---|---|---|
+| `free` | $0 | `llama-3.3-70b-free`, `gemini-flash-free`, `qwen3-vl-30b-free` |
+| `ultra_cheap` | < $0.30 | `gemini-2.0-flash`, `deepseek-v3`, `qwen-2.5-vl-7b` |
+| `great_value` | $0.30–$1.00 | `claude-3.5-haiku`, `qwen-2.5-vl-72b`, `deepseek-r1` |
+| `premium` | > $1.00 | `gemini-3-pro`, `pixtral-large`, `mistral-large` |
+
+Each model entry includes: OpenRouter model ID, `multimodal` flag, supported modalities, context length, and notes.
+
+### Data (`data/`)
+
+| File | Description |
+|---|---|
+| `playgroup_dev_in.tsv` | Input: 11 PDFs × 6 columns (filename, keys, 3 OCR text variants, combined text) |
+| `playgroup_dev_expected.tsv` | Ground truth field values |
+| `pdf_names.txt` | PDF filenames in row order |
+| `playgroup_dev_extracted__<model>.tsv` | Per-model extraction output (one file per run) |
+| `extraction_stats.csv` | Cumulative run stats: model, row counts, per-field hit rates |
+| `*.pdf` | 11 UK charity financial PDFs (≤ 200 pages each) |
+
+### Visualisations
+
+| File | Description |
+|---|---|
+| `which-models-extracted-playground.html` | Interactive leaderboard |
+| `architecture_animated.svg` | Animated pipeline architecture diagram |
+| `performance_animated.svg` | Animated performance comparison |
+
+### Utility Scripts (`utility/`)
+
+| File | Description |
+|---|---|
+| `process_pdf.py` | PDF processing helper |
+| `extract_copy_kleister_charity.sh` | Shell script to copy/prepare data from the full Kleister Charity dataset |
+
+---
+
+## Dataset
+
+A small export from the [Kleister Charity dataset](https://github.com/applicaai/kleister-charity) (`dev-0` folder), using PDFs and pre-extracted OCR text (djvu2hocr, tesseract 4.11, tesseract March 2020, combined).
+
+PDFs are drawn from ~3,000 UK charity financial documents, up to 200 pages each. The 11 in this set start smaller and get longer — a useful proxy for scale testing.
+
+**Fields to extract:**
+
+- `charity_number` — registered charity number
+- `charity_name` — full charity name
+- `report_date` — period end date (YYYY-MM-DD)
+- `income_annually_in_british_pounds` — total annual income
+- `spending_annually_in_british_pounds` — total annual expenditure
+- `address__postcode` — UK postcode
+- `address__post_town` — town/city
+- `address__street_line` — street address
+
+---
+
+## License
+
+Data is UK open data — see [Kleister Charity license](https://github.com/applicaai/kleister-charity/issues/2).

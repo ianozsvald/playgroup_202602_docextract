@@ -2,28 +2,70 @@ Do the following before attending playgroup please.
 
 # Setup
 
-```
-$ python -c "import sys; print(sys.version)" # check >= 3.13
-# $ conda activate python313 (Ian's route to a 3.13 python)
+The project requires Python 3.13 (pinned in `.python-version`). Choose either route below.
+
+---
+
+## Option A — venv + pip
+
+```bash
+$ python -c "import sys; print(sys.version)"  # confirm >= 3.13
+# $ conda activate python313                  # Ian's route if needed
 $ python -m venv .venv
 $ . .venv/bin/activate
 $ pip install -r requirements.txt
 ```
 
-Next you'll need `.env` from Slack with an OpenRouter API key, you'll want something like
+## Option B — uv (faster)
+
+```bash
+$ uv venv                          # auto-picks Python 3.13 from .python-version
+$ . .venv/bin/activate
+$ uv pip install -r requirements.txt
+```
+
+If `uv` isn't installed: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+
+---
+
+# .env
+
+You'll need a `.env` file with your OpenRouter API key (get it from Slack):
 
 ```
-$ more .env
 OPENROUTER_API_KEY=sk-or-v1-...
 ```
 
-Now run `llm_openrouter.py` and it'll try to extract a fact from a canned bit of text. If this works and you get some JSON, you're in a good state. You should have something like:
+---
+
+# Smoke Test
+
+Run this to confirm everything is working:
+
+```bash
+$ python llm_openrouter.py
+```
+
+Expected output — JSON extracted from a canned text snippet:
 
 ```
-$ python llm_openrouter.py 
 Openrouter API key: %s sk-or-v1-8...
 Using model: anthropic/claude-3.5-haiku
 {
     "Registered Charity Number": "1132766"
 }
 ```
+
+If you see the JSON block, you're ready.
+
+---
+
+# Next Steps
+
+See `README.md` for the full end-to-end workflow. The key commands follow a consistent pattern:
+
+- **Pass a model name** → run that model only (e.g. `python extractor.py gemini-2.0-flash`)
+- **Pass multiple model names** → run each in turn
+- **Pass no args** → run all models; already-completed runs are skipped (idempotent)
+
+The same applies to `score.py`: no args scores all models and prints a leaderboard; pass a filename for a verbose diff of one model.
