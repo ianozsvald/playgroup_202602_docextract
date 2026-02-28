@@ -19,24 +19,24 @@ client = OpenAI(
 )
 
 def _get_providers(model_name):
-    only_providers = "unspecified"
+    # Special cases requiring a specific provider for consistency
     # https://openrouter.ai/deepseek/deepseek-v3.2-speciale
     if model_name.startswith("deepseek/deepseek-v3.2-speciale"):
-        only_providers = ["atlas-cloud"]
+        return ["atlas-cloud"]
     # https://openrouter.ai/deepseek/deepseek-v3.1-terminus
     if model_name.startswith("deepseek/deepseek-v3.1-terminus"):
-        only_providers = ["atlas-cloud"]
+        return ["atlas-cloud"]
     if model_name.startswith("z-ai/glm-4.7"):
-        only_providers = ["z-ai"]
-    if model_name.startswith("anthropic"):
-        only_providers = None  # ["anthropic"] gives 521 and 520 errors intermittently
-    if model_name.startswith("openai"):
-        only_providers = None
-    
-    # IF YOU GET THIS, you need to add a provider as I've done above
-    # to fix 1 single provider for consistency of calls
-    assert only_providers != "unspecified", "No provider found for {model_name}, you need to set one in the code"
-    return only_providers
+        return ["z-ai"]
+
+    # Known model families — None means no provider restriction (any provider)
+    known_prefixes = ("anthropic", "openai", "deepseek", "google", "meta-llama",
+                      "mistralai", "qwen", "nvidia", "cohere")
+    if model_name.startswith(known_prefixes):
+        return None
+
+    # IF YOU GET THIS, add a provider entry above for consistency of calls
+    raise ValueError(f"No provider found for {model_name}, you need to set one in the code")
 
 def call_llm(model_name, prompt_template, extracted_text):
     instructions = "Follow the instructions in the prompt template.\n"

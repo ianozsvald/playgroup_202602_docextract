@@ -1,5 +1,9 @@
+.DS_Store
 __pycache__
 llm_calls.log
 brief.md
 .env
 playgroup_email.txt
+
+.claude/
+.playwright-mcp/
