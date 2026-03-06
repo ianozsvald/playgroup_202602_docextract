@@ -6,6 +6,7 @@ Usage: uv run python playground.py
 Output: playground.html  (open in any browser, fully self-contained)
 """
 
+import csv
 import json
 from pathlib import Path
 
@@ -65,6 +66,102 @@ def load_model_meta() -> dict:
             "notes":      cfg.get("notes", ""),
         }
     return meta
+
+
+def load_extraction_stats() -> dict:
+    """Load time/cost/token data using same 3-tier logic as score.py _load_stats().
+
+    Priority:
+    1. extraction_stats.csv (has totals directly)
+    2. extraction_call_log.csv (aggregate per-row entries)
+    3. config pricing x avg tokens (estimate, marked with estimated=true)
+    """
+    stats = {}
+
+    # 1. Primary: stats CSV
+    stats_file = DATA_DIR / "extraction_stats.csv"
+    if stats_file.exists():
+        with open(stats_file) as f:
+            for row in csv.DictReader(f):
+                name = row.get("model_short_name", "")
+                if not name:
+                    continue
+                elapsed = float(row.get("total_elapsed_secs", 0))
+                cost = float(row.get("total_cost_usd", 0))
+                if elapsed or cost:
+                    stats[name] = {
+                        "total_elapsed_secs": elapsed,
+                        "total_cost_usd": cost,
+                        "total_prompt_tokens": int(row.get("total_prompt_tokens", 0)),
+                        "total_completion_tokens": int(row.get("total_completion_tokens", 0)),
+                        "rows_with_values": int(row.get("rows_with_values", 0)),
+                        "rows_empty": int(row.get("rows_empty", 0)),
+                        "avg_secs_per_row": float(row.get("avg_secs_per_row", 0)),
+                        "avg_cost_per_row": float(row.get("avg_cost_per_row", 0)),
+                        "estimated": False,
+                    }
+
+    # 2. Fallback: aggregate from call log
+    call_log_file = DATA_DIR / "extraction_call_log.csv"
+    if call_log_file.exists():
+        with open(call_log_file) as f:
+            agg: dict[str, dict] = {}
+            for row in csv.DictReader(f):
+                name = row.get("model_short_name", "")
+                if not name or name in stats or row.get("status") == "error":
+                    continue
+                if name not in agg:
+                    agg[name] = {"elapsed": 0.0, "prompt": 0, "completion": 0, "cost": 0.0, "rows": 0}
+                agg[name]["elapsed"] += float(row.get("elapsed_secs", 0))
+                agg[name]["prompt"] += int(row.get("prompt_tokens", 0))
+                agg[name]["completion"] += int(row.get("completion_tokens", 0))
+                agg[name]["cost"] += float(row.get("cost_usd", 0))
+                agg[name]["rows"] += 1
+            for name, a in agg.items():
+                if a["elapsed"] or a["cost"]:
+                    n = max(a["rows"], 1)
+                    stats[name] = {
+                        "total_elapsed_secs": a["elapsed"],
+                        "total_cost_usd": a["cost"],
+                        "total_prompt_tokens": a["prompt"],
+                        "total_completion_tokens": a["completion"],
+                        "rows_with_values": a["rows"],
+                        "rows_empty": 0,
+                        "avg_secs_per_row": a["elapsed"] / n,
+                        "avg_cost_per_row": a["cost"] / n,
+                        "estimated": False,
+                    }
+
+    # 3. Estimate for remaining models using config pricing x avg tokens
+    known_elapsed = [s["total_elapsed_secs"] for s in stats.values() if s["total_elapsed_secs"] > 0]
+    if known_elapsed:
+        avg_elapsed = sum(known_elapsed) / len(known_elapsed)
+        avg_prompt = 180_000   # typical total prompt tokens across 11 rows
+        avg_completion = 1_500
+        try:
+            from config_models import VALUE_MODELS
+        except ImportError:
+            VALUE_MODELS = {}
+        for model_name, cfg in VALUE_MODELS.items():
+            if model_name not in stats:
+                price_in = cfg.get("price_in", 0)
+                price_out = cfg.get("price_out", 0)
+                est_cost = (avg_prompt * price_in + avg_completion * price_out) / 1_000_000
+                if est_cost > 0:
+                    n = 11  # expected rows
+                    stats[model_name] = {
+                        "total_elapsed_secs": avg_elapsed,
+                        "total_cost_usd": est_cost,
+                        "total_prompt_tokens": avg_prompt,
+                        "total_completion_tokens": avg_completion,
+                        "rows_with_values": 0,
+                        "rows_empty": 0,
+                        "avg_secs_per_row": avg_elapsed / n,
+                        "avg_cost_per_row": est_cost / n,
+                        "estimated": True,
+                    }
+
+    return stats
 
 
 # ── Parsing ──────────────────────────────────────────────────────────────────
@@ -187,6 +284,7 @@ def main():
         doc_names.append(name)
 
     model_meta = load_model_meta()
+    extraction_stats = load_extraction_stats()
     models_data = {}
     for model_file in sorted(DATA_DIR.glob("playgroup_dev_extracted__*.tsv")):
         model_name = model_file.stem.replace("playgroup_dev_extracted__", "")
@@ -201,6 +299,7 @@ def main():
         "field_labels": FIELD_LABELS,
         "field_groups": FIELD_GROUPS,
         "model_meta": model_meta,
+        "extraction_stats": extraction_stats,
         "doc_names": doc_names,
         "expected": expected_rows,
     }
@@ -301,6 +400,7 @@ select,button.ctrl{padding:6px 12px;border:1px solid var(--border);border-radius
   <button class="tab-btn" onclick="switchTab('errors')">Error Breakdown</button>
   <button class="tab-btn" onclick="switchTab('deepdive')">Deep Dive</button>
   <button class="tab-btn" onclick="switchTab('recommendations')">Recommendations</button>
+  <button class="tab-btn" onclick="switchTab('evolution')">Project Evolution</button>
 </div>
 
 <!-- ═══════════════════════════════ RANKINGS ═══════════════════════════════ -->
@@ -454,6 +554,26 @@ select,button.ctrl{padding:6px 12px;border:1px solid var(--border);border-radius
   </div>
 </div>
 
+<!-- ══════════════════════════ PROJECT EVOLUTION ════════════════════════════ -->
+<div id="tab-evolution" class="tab-panel">
+  <div class="card">
+    <h2>Project Evolution Timeline</h2>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">How this extraction benchmark evolved across 10 commits — from raw data preparation to a multi-model scored leaderboard.</p>
+    <div id="evolution-timeline"></div>
+  </div>
+  <div class="two-col">
+    <div class="card">
+      <h2>Numbers at a Glance</h2>
+      <div id="evolution-stats"></div>
+    </div>
+    <div class="card">
+      <h2>Cost & Speed Summary</h2>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">From extraction_stats.csv — actual observed time and cost per model (where available).</p>
+      <div id="cost-speed-table" style="overflow-x:auto"></div>
+    </div>
+  </div>
+</div>
+
 <script>
 const RAW = /*__DATA__*/null;
 
@@ -514,6 +634,7 @@ function switchTab(id){
     if(id==='errors') renderErrorChart(), renderErrorPatterns()
     if(id==='deepdive') initDeepDive()
     if(id==='recommendations') renderRecommendations(), renderInsights(), renderImprovements()
+    if(id==='evolution') renderEvolution()
   }
 }
 
@@ -560,15 +681,28 @@ function rankRows(){
   })
 }
 
+function fmtTime(secs, est){
+  if(!secs) return '<span style="color:var(--muted)">—</span>'
+  const prefix = est ? '~' : ''
+  if(secs < 60) return prefix+secs.toFixed(0)+'s'
+  return prefix+(secs/60).toFixed(1)+'m'
+}
+function fmtCost(usd, est){
+  if(!usd) return '<span style="color:var(--muted)">—</span>'
+  const prefix = est ? '~' : ''
+  if(usd < 0.01) return prefix+'<$0.01'
+  return prefix+'$'+usd.toFixed(3)
+}
 function renderRankTable(){
   const rows = rankRows()
   const best = rows[0]?.acc || 1
   let html = `<table><thead><tr>
     <th>#</th><th>Model</th><th>Accuracy</th><th>Score bar</th>
-    <th>Correct</th><th>Wrong</th><th>Missing</th><th>Perf.</th><th>Cost</th>
+    <th>Correct</th><th>Wrong</th><th>Missing</th><th>Time</th><th>Cost</th><th>Perf.</th><th>Tier</th>
   </tr></thead><tbody>`
   rows.forEach((r,i)=>{
     const t = tier(r.acc)
+    const st = RAW.extraction_stats?.[r.m]
     html += `<tr>
       <td style="color:var(--muted)">${i+1}</td>
       <td><strong>${r.m}</strong></td>
@@ -581,6 +715,8 @@ function renderRankTable(){
       <td style="color:var(--correct)">${r.correct}</td>
       <td style="color:var(--wrong)">${r.wrong}</td>
       <td style="color:var(--missing)">${r.missing}</td>
+      <td>${fmtTime(st?.total_elapsed_secs, st?.estimated)}</td>
+      <td>${fmtCost(st?.total_cost_usd, st?.estimated)}</td>
       <td><span class="badge ${t.cls}">${t.label}</span></td>
       <td>${costTierBadge(r.m)}</td>
     </tr>`
@@ -1034,9 +1170,88 @@ function renderImprovements(){
   html += `<div class="insight insight-tip"><strong>Prompt: street line normalisation</strong> — Multi-line addresses are collapsed inconsistently. Instruct: <em>"Join multiple address lines with a single space. Omit building names unless the street number is absent."</em></div>`
   html += `<div class="insight"><strong>Consider few-shot examples</strong> — Models that got 100% on some docs but 0% on others are likely sensitive to document format variations. Adding 1-2 in-context examples from different document layouts will reduce variance.</div>`
   html += `<div class="insight"><strong>Post-processing</strong> — Apply deterministic cleaning after extraction: uppercase postcodes, strip trailing/leading whitespace, normalise decimal places. This can close the gap between "wrong" and "correct" for formatting-only errors.</div>`
-  html += `<div class="insight insight-warn"><strong>Re-test rate-limited models</strong> — Several models (llama-3.3-70b, mistral-small-free, command-r-plus, qwen-coder-32b) returned errors. These results are invalid. Run them again with proper rate limiting or paid API keys before drawing conclusions.</div>`
+  const failedNames = allModels().filter(m=>!isActive(m)).join(', ')
+  if(failedNames) html += `<div class="insight insight-warn"><strong>Re-test rate-limited models</strong> — These models returned all errors: ${failedNames}. Run them again with proper rate limiting or paid API keys before drawing conclusions.</div>`
 
   document.getElementById('improvements').innerHTML = html
+}
+
+// ── ⑦ Evolution ──────────────────────────────────────────────────────────────
+
+function renderEvolution(){
+  const timeline = [
+    {phase:'Data Preparation', commits:'8482875, bda4127, 3c4a94a', detail:'Automated Kleister-Charity data extraction. Collected 11 PDF documents (5→10→11). Built utility scripts for data prep.', icon:'📦'},
+    {phase:'Format Standardisation', commits:'56eebd2', detail:'Converted expected/predicted TSV files to proper tab-delimited format. Enabled delimiter validation in score.py.', icon:'🔧'},
+    {phase:'Multi-Model Leaderboard', commits:'5523528', detail:'Added config_models.py with 40+ model configs (tiers, pricing, multimodal flags). Built extractor.py, score.py leaderboard, and this interactive playground. Generated extraction results for 33+ models via OpenRouter.', icon:'🏆'},
+    {phase:'Documentation', commits:'013826d', detail:'Rewrote README and QUICKSTART to cover full pipeline: extractor.py → score.py → playground.py. Documented model tiers, CLI patterns, and output files.', icon:'📖'},
+    {phase:'Model Cleanup & Refactor', commits:'66dd9d5', detail:'Removed 8 unavailable models (deepseek-r1-free, gpt-oss-120b-free, gemini-flash-free, etc.). Deleted stale TSVs. Added extraction call log tracking. Refactored LLM provider selection.', icon:'🧹'},
+    {phase:'Security Hardening', commits:'1fad564', detail:'Added sanitize_error_message() to scrub user_id/API keys from all logs and TSV outputs before writing to disk.', icon:'🔒'},
+    {phase:'Extended Results', commits:'5d92ce5', detail:'Ran extractions for 8 additional models (claude-3.5-haiku, command-r-plus, gemma-3-27b-free, etc.). Added extraction_stats.csv with per-model timing and cost data.', icon:'📊'},
+    {phase:'Cost & Speed Tracking', commits:'5b13d98', detail:'Added time and cost columns to the scoring leaderboard. Reads actual elapsed time and API cost from extraction stats. Estimates costs for models without stats using config pricing × avg tokens.', icon:'💰'},
+  ]
+
+  let html = '<div style="position:relative;padding-left:28px;border-left:3px solid var(--accent)">'
+  timeline.forEach((t,i)=>{
+    const isLast = i===timeline.length-1
+    html += `<div style="margin-bottom:${isLast?0:20}px;position:relative">
+      <div style="position:absolute;left:-38px;top:0;width:22px;height:22px;border-radius:50%;background:${isLast?'var(--accent)':'var(--surface)'};border:2px solid var(--accent);display:flex;align-items:center;justify-content:center;font-size:12px">${t.icon}</div>
+      <div style="font-weight:700;font-size:14px;color:var(--text)">${t.phase}</div>
+      <div style="font-size:12px;color:var(--muted);margin:2px 0">Commits: <code>${t.commits}</code></div>
+      <div style="font-size:13px">${t.detail}</div>
+    </div>`
+  })
+  html += '</div>'
+  document.getElementById('evolution-timeline').innerHTML = html
+
+  // Numbers at a glance
+  const active = activeModels()
+  const failed = allModels().length - active.length
+  const totalExtractions = active.reduce((s,m)=>s+RAW.models[m].total_expected,0)
+  const totalCorrect = active.reduce((s,m)=>s+RAW.models[m].total_correct,0)
+  const bestModel = active.reduce((best,m)=>RAW.models[m].accuracy > RAW.models[best].accuracy ? m : best, active[0])
+  const avgAcc = active.reduce((s,m)=>s+RAW.models[m].accuracy,0)/active.length
+
+  let statsHtml = `
+    <table>
+      <tr><td style="font-weight:600">Documents in corpus</td><td>${RAW.doc_names.length} charity PDFs (UK, 100+ pages each)</td></tr>
+      <tr><td style="font-weight:600">Fields extracted per doc</td><td>${RAW.fields.length} (identity, financial, address)</td></tr>
+      <tr><td style="font-weight:600">Models configured</td><td>${allModels().length} total, ${active.length} functional, ${failed} failed/rate-limited</td></tr>
+      <tr><td style="font-weight:600">Total field comparisons</td><td>${totalExtractions} expected values scored</td></tr>
+      <tr><td style="font-weight:600">Overall correct extractions</td><td>${totalCorrect} across all functional models</td></tr>
+      <tr><td style="font-weight:600">Best model</td><td><strong>${bestModel}</strong> at ${pct(RAW.models[bestModel].accuracy)}</td></tr>
+      <tr><td style="font-weight:600">Average accuracy</td><td>${pct(avgAcc)} across ${active.length} functional models</td></tr>
+      <tr><td style="font-weight:600">Model tiers</td><td>Free → Ultra-cheap → Great Value → Premium</td></tr>
+      <tr><td style="font-weight:600">API provider</td><td>OpenRouter (unified access to 40+ models)</td></tr>
+    </table>`
+  document.getElementById('evolution-stats').innerHTML = statsHtml
+
+  // Cost & Speed table from extraction_stats
+  const stats = RAW.extraction_stats || {}
+  const statModels = Object.keys(stats).filter(m=>stats[m].total_elapsed_secs > 0)
+  if(statModels.length === 0){
+    document.getElementById('cost-speed-table').innerHTML = '<p style="color:var(--muted)">No extraction stats available.</p>'
+    return
+  }
+  statModels.sort((a,b)=>stats[a].total_elapsed_secs - stats[b].total_elapsed_secs)
+  let tbl = `<table><thead><tr>
+    <th>Model</th><th>Total Time</th><th>Avg/Doc</th><th>Total Cost</th><th>Avg/Doc</th><th>Prompt Tokens</th><th>Completion Tokens</th>
+  </tr></thead><tbody>`
+  statModels.forEach(m=>{
+    const s = stats[m]
+    tbl += `<tr>
+      <td><strong>${m}</strong></td>
+      <td>${fmtTime(s.total_elapsed_secs, s.estimated)}</td>
+      <td>${fmtTime(s.avg_secs_per_row, s.estimated)}</td>
+      <td>${fmtCost(s.total_cost_usd, s.estimated)}</td>
+      <td>${fmtCost(s.avg_cost_per_row, s.estimated)}</td>
+      <td>${s.total_prompt_tokens.toLocaleString()}</td>
+      <td>${s.total_completion_tokens.toLocaleString()}</td>
+    </tr>`
+  })
+  tbl += '</tbody></table>'
+  const hasEstimates = statModels.some(m=>stats[m].estimated)
+  if(hasEstimates) tbl += '<p style="font-size:11px;color:var(--muted);margin-top:8px">~ = estimated from config pricing × avg tokens</p>'
+  document.getElementById('cost-speed-table').innerHTML = tbl
 }
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
