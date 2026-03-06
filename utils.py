@@ -16,7 +16,9 @@ def extract_from_triple_backticks(text):
     matches = re.findall(pattern, text, re.DOTALL)
 
     if not matches:
-        return None
+        # Fallback: try to extract raw JSON object from the text
+        json_match = re.search(r"\{[^{}]*\}", text, re.DOTALL)
+        return json_match.group(0).strip() if json_match else None
 
     # Get the last match
     lang_or_content, content = matches[-1]

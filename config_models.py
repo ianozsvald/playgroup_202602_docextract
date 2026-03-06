@@ -14,15 +14,7 @@ VALUE_MODELS = {
         "ctx":        131_000,
         "notes":      "GPT-4 class open model, best free text generalist",
     },
-    "deepseek-r1-free": {
-        "model":      "deepseek/deepseek-r1-0528:free",
-        "multimodal": False,
-        "modalities": ["text"],
-        "tier":       "free",
-        "price_in":   0, "price_out":  0,
-        "ctx":        164_000,
-        "notes":      "Frontier reasoning (o1-class), free tier",
-    },
+    # deepseek-r1-free: removed — deepseek/deepseek-r1-0528:free no longer available on OpenRouter
     "mistral-small-free": {
         "model":      "mistralai/mistral-small-3.1-24b-instruct:free",
         "multimodal": False,
@@ -32,44 +24,12 @@ VALUE_MODELS = {
         "ctx":        33_000,
         "notes":      "24B, punches above weight, Apache 2.0",
     },
-    "gpt-oss-120b-free": {
-        "model":      "openai/gpt-oss-120b",
-        "multimodal": False,
-        "modalities": ["text"],
-        "tier":       "free",
-        "price_in":   0, "price_out":  0,
-        "ctx":        128_000,
-        "notes":      "OpenAI open-weight MoE, Apache 2.0, o4-mini class",
-    },
+    # gpt-oss-120b-free: removed — openai/gpt-oss-120b:free no longer available on OpenRouter
 
     # ── Free · Multimodal ─────────────────────────────────────
-    "gemini-flash-free": {
-        "model":      "google/gemini-2.0-flash-exp:free",
-        "multimodal": True,
-        "modalities": ["text", "image", "video", "audio", "pdf"],
-        "tier":       "free",
-        "price_in":   0, "price_out":  0,
-        "ctx":        1_000_000,
-        "notes":      "1M ctx, full multimodal, best free vision model",
-    },
-    "qwen3-vl-30b-free": {
-        "model":      "qwen/qwen3-vl-30b-a3b-instruct:free",
-        "multimodal": True,
-        "modalities": ["text", "image", "video"],
-        "tier":       "free",
-        "price_in":   0, "price_out":  0,
-        "ctx":        131_000,
-        "notes":      "30B VL, strong OCR/doc AI/GUI automation, free",
-    },
-    "llama-4-scout-free": {
-        "model":      "meta-llama/llama-4-scout:free",
-        "multimodal": True,
-        "modalities": ["text", "image"],
-        "tier":       "free",
-        "price_in":   0, "price_out":  0,
-        "ctx":        512_000,
-        "notes":      "Meta multimodal scout, 512K ctx, free",
-    },
+    # gemini-flash-free: removed — google/gemini-2.0-flash-exp:free no longer available on OpenRouter
+    # qwen3-vl-30b-free: free tier no longer available on OpenRouter
+    # llama-4-scout-free: free tier no longer available on OpenRouter (paid meta-llama/llama-4-scout exists)
     "gemma-3-27b-free": {
         "model":      "google/gemma-3-27b-it:free",
         "multimodal": True,
@@ -205,23 +165,15 @@ VALUE_MODELS = {
         "notes":      "Qwen3 VL 8B, 131K ctx, strong spatial reasoning",
     },
     "gemma-3n": {
-        "model":      "google/gemma-3n-e2b-it",
+        "model":      "google/gemma-3n-e4b-it",
         "multimodal": True,
         "modalities": ["text", "image", "video", "audio"],
         "tier":       "ultra_cheap",
         "price_in":   0.02, "price_out": 0.04,
         "ctx":        32_000,
-        "notes":      "Smallest multimodal, edge-deployable, 140+ langs",
+        "notes":      "4B effective multimodal, edge-deployable, 140+ langs",
     },
-    "pixtral-12b": {
-        "model":      "mistralai/pixtral-12b-2409",
-        "multimodal": True,
-        "modalities": ["text", "image"],
-        "tier":       "ultra_cheap",
-        "price_in":   0.10, "price_out": 0.10,
-        "ctx":        128_000,
-        "notes":      "Mistral 12B vision, good doc understanding",
-    },
+    # pixtral-12b: removed from OpenRouter (mistralai/pixtral-12b-2409 no longer available)
     "llama-3.2-11b-vision": {
         "model":      "meta-llama/llama-3.2-11b-vision-instruct",
         "multimodal": True,
@@ -329,15 +281,7 @@ VALUE_MODELS = {
         "ctx":        200_000,
         "notes":      "Fast, great tool use, native PDF, 200K ctx",
     },
-    "llama-3.2-90b-vision": {
-        "model":      "meta-llama/llama-3.2-90b-vision-instruct",
-        "multimodal": True,
-        "modalities": ["text", "image"],
-        "tier":       "great_value",
-        "price_in":   0.60, "price_out": 0.60,
-        "ctx":        131_000,
-        "notes":      "90B vision, strong generalist, open-source",
-    },
+    # llama-3.2-90b-vision: removed from OpenRouter (meta-llama/llama-3.2-90b-vision-instruct no longer available)
     "gemma-3-27b": {
         "model":      "google/gemma-3-27b-it",
         "multimodal": True,
@@ -363,7 +307,7 @@ VALUE_MODELS = {
         "notes":      "Near-frontier reasoning, strong multilingual",
     },
     "command-r-plus": {
-        "model":      "cohere/command-r-plus",
+        "model":      "cohere/command-r-plus-08-2024",
         "multimodal": False,
         "modalities": ["text"],
         "tier":       "premium",

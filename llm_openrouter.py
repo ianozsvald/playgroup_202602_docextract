@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import time
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -38,8 +39,16 @@ def _get_providers(model_name):
     # IF YOU GET THIS, add a provider entry above for consistency of calls
     raise ValueError(f"No provider found for {model_name}, you need to set one in the code")
 
-def call_llm(model_name, prompt_template, extracted_text):
+def call_llm(model_name, prompt_template, extracted_text, max_ctx_tokens=None):
+    """Returns dict: {text, elapsed_secs, prompt_tokens, completion_tokens}."""
     instructions = "Follow the instructions in the prompt template.\n"
+    if max_ctx_tokens:
+        # Rough estimate: 1 token ≈ 4 chars. Reserve space for prompt template + response.
+        max_text_chars = (max_ctx_tokens - 2000) * 4 - len(prompt_template)
+        if len(extracted_text) > max_text_chars:
+            logger.warning("Truncating text from %d to %d chars for %s (ctx=%d)",
+                           len(extracted_text), max_text_chars, model_name, max_ctx_tokens)
+            extracted_text = extracted_text[:max_text_chars]
     prompt = prompt_template + extracted_text
 
     logger.info("Prompt:\n%s", prompt)
@@ -49,23 +58,46 @@ def call_llm(model_name, prompt_template, extracted_text):
     only_providers = _get_providers(model_name)
     extra_params = {"provider": {"allow_fallbacks": False, "only": only_providers}}
     logger.info("LLM calling with %s", model_name)
-    # extra_params = {}
-    while True:
+    messages = [
+        {"role": "system", "content": instructions},
+        {"role": "user", "content": prompt},
+    ]
+    max_retries = 5
+    t0 = time.time()
+    for attempt in range(max_retries + 1):
         try:
-            response = client.responses.create(
+            response = client.chat.completions.create(
                 model=model_name,
-                instructions=instructions,
-                input=prompt,
+                messages=messages,
                 extra_body=extra_params,
             )
-            break  # jump out if we're successful
+            break
         except json.JSONDecodeError:
             logger.warning("Oops, got a JSONDecodeError after calling LLM")
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str and attempt < max_retries:
+                wait = 2 ** attempt * 10  # 10s, 20s, 40s, 80s, 160s
+                logger.warning("Rate limited (429), waiting %ds before retry %d/%d", wait, attempt + 1, max_retries)
+                time.sleep(wait)
+            else:
+                raise
+    elapsed_secs = round(time.time() - t0, 2)
 
-    logger.info("Raw return from llm call:\n%s", response.output_text)
-    extracted = utils.extract_from_triple_backticks(response.output_text)
+    usage = getattr(response, "usage", None)
+    prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+    completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+
+    raw_text = response.choices[0].message.content
+    logger.info("Raw return from llm call:\n%s", raw_text)
+    extracted = utils.extract_from_triple_backticks(raw_text)
     logger.info("Extracted answer:\n%s", extracted)
-    return extracted
+    return {
+        "text": extracted,
+        "elapsed_secs": elapsed_secs,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+    }
 
 
 if __name__ == "__main__":
@@ -97,8 +129,9 @@ if __name__ == "__main__":
     "THE SANATA CHARITABLE TRUST\\nCompany Registration Number:\\n06999163\\n(England and Wales)\\nRegistered Charity Number\\n1132766\\nTrustees' Report and Unaudited Financial Statements\\nFor the Sixteen Month"
     """
 
-    extracted = call_llm(model_name,
+    result = call_llm(model_name,
              prompt_template,
              extracted_text
     )
-    print(extracted)
+    print(result["text"])
+    print(f"Time: {result['elapsed_secs']}s, Tokens: {result['prompt_tokens']}in/{result['completion_tokens']}out")

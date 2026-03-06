@@ -35,3 +35,15 @@ datetime,model_short_name,model_full_name,multimodal,total,rows_with_values,rows
 2026-02-27 17:35:21,gemma-3-27b,google/gemma-3-27b-it,True,11,11,0,11,11,11,8,8,10,11,11
 2026-02-27 17:40:22,gemini-3-pro,google/gemini-3-pro-preview,True,11,11,0,11,11,11,9,9,10,11,11
 2026-02-27 17:41:15,pixtral-large,mistralai/pixtral-large-2411,True,11,11,0,11,11,11,9,9,11,11,11
+2026-03-06 17:27:04,llama-3.3-70b-free,meta-llama/llama-3.3-70b-instruct:free,False,11,0,11,0,0,0,0,0,0,0,0
+2026-03-06 17:27:05,deepseek-r1-free,deepseek/deepseek-r1-0528:free,False,11,0,11,0,0,0,0,0,0,0,0
+2026-03-06 17:27:26,mistral-small-free,mistralai/mistral-small-3.1-24b-instruct:free,False,11,0,11,0,0,0,0,0,0,0,0
+2026-03-06 17:27:26,gpt-oss-120b-free,openai/gpt-oss-120b:free,False,11,0,11,0,0,0,0,0,0,0,0
+2026-03-06 17:27:27,gemini-flash-free,google/gemini-2.0-flash-exp:free,True,11,0,11,0,0,0,0,0,0,0,0
+2026-03-06 17:27:47,gemma-3-27b-free,google/gemma-3-27b-it:free,True,11,0,11,0,0,0,0,0,0,0,0
+2026-03-06 17:28:03,gemma-3n-free,google/gemma-3n-e2b-it:free,True,11,0,11,0,0,0,0,0,0,0,0
+2026-03-06 17:28:31,qwen-2.5-7b,qwen/qwen-2.5-7b-instruct,False,11,7,4,7,6,5,6,6,6,7,7
+2026-03-06 17:39:15,qwen3-235b,qwen/qwen3-235b-a22b,False,11,11,0,11,11,11,10,10,10,11,11
+2026-03-06 17:39:31,gemini-2.5-flash,google/gemini-2.5-flash,True,11,11,0,11,11,11,9,9,11,11,11
+2026-03-06 17:39:47,gemini-2.0-flash,google/gemini-2.0-flash-001,True,11,11,0,10,9,11,6,6,10,10,10
+2026-03-06 17:41:05,qwen3-vl-8b,qwen/qwen3-vl-8b-instruct,True,11,11,0,11,11,11,10,10,11,11,11
