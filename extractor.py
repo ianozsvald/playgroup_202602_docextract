@@ -7,6 +7,7 @@ from datetime import datetime
 
 import llm_openrouter
 from config_models import VALUE_MODELS
+from utils import sanitize_error_message
 
 IN_FILENAME = "data/playgroup_dev_in.tsv"
 STATS_FILENAME = "data/extraction_stats.csv"
@@ -199,7 +200,7 @@ def run_extraction(model_short_name):
                 result = llm_openrouter.call_llm(model, PROMPT_TEMPLATE, text_combined, max_ctx_tokens=max_ctx_tokens)
                 fields = _parse_llm_response(result["text"])
             except Exception as e:
-                error_msg = str(e).replace("\t", " ").replace("\n", " ")
+                error_msg = sanitize_error_message(str(e)).replace("\t", " ").replace("\n", " ")
                 line = f"error={error_msg}"
                 outfile.write(line + "\n")
                 rows_empty += 1
