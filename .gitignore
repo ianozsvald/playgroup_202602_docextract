@@ -5,5 +5,7 @@ brief.md
 .env
 playgroup_email.txt
 
+data/.doubleword_checkpoints.json
+
 .claude/
 .playwright-mcp/
