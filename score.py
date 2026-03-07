@@ -112,13 +112,20 @@ def score_all_models(expected_filename, verbose=False):
     stats = _load_stats()
     results = []
     for predicted_filename in sorted(glob.glob("data/*_dev_extracted__*.tsv")):
-        model_name = predicted_filename.split("__", 1)[1].removesuffix(".tsv")
+        # Filename: playgroup_dev_extracted__{provider}__{model}.tsv (new)
+        #       or: playgroup_dev_extracted__{model}.tsv (legacy, no provider)
+        after_prefix = predicted_filename.split("__", 1)[1].removesuffix(".tsv")
+        if "__" in after_prefix:
+            provider, model_name = after_prefix.split("__", 1)
+        else:
+            provider = "openrouter"
+            model_name = after_prefix
         predicted_items = get_all_items(predicted_filename)
         if verbose:
-            print(f"\n--- {model_name} [{_mod_tag(model_name)}] ---")
+            print(f"\n--- [{provider}] {model_name} [{_mod_tag(model_name)}] ---")
         correct, total = score(expected_items, predicted_items, verbose=verbose)
         model_stats = stats.get(model_name, {})
-        results.append((model_name, correct, total,
+        results.append((provider, model_name, correct, total,
                          model_stats.get("elapsed_secs", 0),
                          model_stats.get("cost_usd", 0),
                          model_stats.get("estimated", False)))
@@ -138,13 +145,13 @@ if __name__ == "__main__":
     else:
         # Score all models
         results = score_all_models(expected_filename, verbose=False)
-        print(f"\n{'Model':<25} {'Mod':<6} {'Score':>10}  {'%':>7}  {'Time(s)':>9}  {'Cost($)':>9}")
-        print("-" * 75)
-        results.sort(key=lambda r: r[1] / r[2] if r[2] else 0, reverse=True)
-        for model_name, correct, total, elapsed, cost, estimated in results:
+        print(f"\n{'Provider':<12} {'Model':<25} {'Mod':<6} {'Score':>10}  {'%':>7}  {'Time(s)':>9}  {'Cost($)':>9}")
+        print("-" * 87)
+        results.sort(key=lambda r: r[2] / r[3] if r[3] else 0, reverse=True)
+        for provider, model_name, correct, total, elapsed, cost, estimated in results:
             pct = 100 * correct / total if total else 0
             prefix = "~" if estimated else ""
             time_str = f"{prefix}{elapsed:.1f}" if elapsed else "-"
             cost_str = f"{prefix}{cost:.4f}" if cost else "-"
-            print(f"{model_name:<25} {_mod_tag(model_name):<6} {correct:>4}/{total:<4}  {pct:>6.1f}%  {time_str:>9}  {cost_str:>9}")
+            print(f"{provider:<12} {model_name:<25} {_mod_tag(model_name):<6} {correct:>4}/{total:<4}  {pct:>6.1f}%  {time_str:>9}  {cost_str:>9}")
         print(f"\n  ~ = estimated from config pricing x avg tokens")

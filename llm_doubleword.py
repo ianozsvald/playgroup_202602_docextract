@@ -49,7 +49,7 @@ async def call_llm(
 ) -> str:
     """Call an LLM via the Doubleword batch API and return the extracted text response."""
     prompt = prompt_template + extracted_text
-    logger.info("Calling %s, prompt_len=%d", model_name, len(prompt))
+    logger.info("[Doubleword] Calling %s, prompt_len=%d", model_name, len(prompt))
 
     try:
         response = await client.chat.completions.create(
@@ -60,11 +60,11 @@ async def call_llm(
             ],
         )
     except (openai.APIError, openai.APITimeoutError) as e:
-        logger.error("API error for %s: %s", model_name, e)
-        raise RuntimeError(f"Doubleword API error ({model_name}): {e}") from e
+        logger.error("[Doubleword] API error for %s: %s", model_name, e)
+        raise RuntimeError(f"[Doubleword] API error ({model_name}): {e}") from e
 
     raw_text = response.choices[0].message.content
-    logger.info("Response from %s, response_len=%d", model_name, len(raw_text) if raw_text else 0)
+    logger.info("[Doubleword] Response from %s, response_len=%d", model_name, len(raw_text) if raw_text else 0)
 
     extracted = utils.extract_from_triple_backticks(raw_text)
     if extracted is None:

@@ -110,7 +110,7 @@ def _row_to_tsv_line(fields):
     return "\t".join(sorted_pairs)
 
 
-CALL_LOG_FIELDS = ["datetime", "model_short_name", "model_full_name", "tier", "multimodal",
+CALL_LOG_FIELDS = ["datetime", "provider", "model_short_name", "model_full_name", "tier", "multimodal",
                     "row_num", "pdf_filename", "status", "elapsed_secs",
                     "prompt_tokens", "completion_tokens", "cost_usd", "fields_extracted", "error"]
 
@@ -124,15 +124,16 @@ def _append_call_log(row_data):
         writer.writerow(row_data)
 
 
-def _append_stats(model_short_name, model_cfg, total, rows_with_values, rows_empty, field_counts,
+def _append_stats(provider, model_short_name, model_cfg, total, rows_with_values, rows_empty, field_counts,
                    total_elapsed_secs=0.0, total_prompt_tokens=0, total_completion_tokens=0, total_cost_usd=0.0):
-    fieldnames = (["datetime", "model_short_name", "model_full_name", "tier", "multimodal",
+    fieldnames = (["datetime", "provider", "model_short_name", "model_full_name", "tier", "multimodal",
                    "price_in", "price_out", "ctx",
                    "total", "rows_with_values", "rows_empty",
                    "total_elapsed_secs", "total_prompt_tokens", "total_completion_tokens", "total_cost_usd",
                    "avg_secs_per_row", "avg_cost_per_row"] + ALL_FIELDS)
     row = {
         "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "provider": provider,
         "model_short_name": model_short_name,
         "model_full_name": model_cfg["model"],
         "tier": model_cfg.get("tier", ""),
@@ -160,10 +161,10 @@ def _append_stats(model_short_name, model_cfg, total, rows_with_values, rows_emp
     print(f"  Stats appended to {STATS_FILENAME}")
 
 
-def _print_summary(model_short_name, multimodal, rows_with_values, rows_empty, field_counts,
+def _print_summary(provider, model_short_name, multimodal, rows_with_values, rows_empty, field_counts,
                     total_elapsed_secs=None, total_prompt_tokens=None, total_completion_tokens=None, total_cost_usd=None):
     total = rows_with_values + rows_empty
-    print(f"\n--- {model_short_name} {_mod_tag(multimodal)} summary ---")
+    print(f"\n--- [{provider}] {model_short_name} {_mod_tag(multimodal)} summary ---")
     print(f"  Rows with values : {rows_with_values}/{total}")
     print(f"  Rows empty       : {rows_empty}/{total}")
     if total_elapsed_secs is not None:
@@ -187,14 +188,14 @@ def _run_openrouter(model_short_name):
     model = model_cfg["model"]
     multimodal = model_cfg["multimodal"]
     max_ctx_tokens = model_cfg.get("ctx")
-    out_filename = f"data/playgroup_dev_extracted__{model_short_name}.tsv"
+    out_filename = f"data/playgroup_dev_extracted__openrouter__{model_short_name}.tsv"
 
     if os.path.exists(out_filename):
-        print(f"Skipping {model_short_name} {_mod_tag(multimodal)}: {out_filename} already exists")
+        print(f"[OpenRouter] Skipping {model_short_name} {_mod_tag(multimodal)}: {out_filename} already exists")
         return
 
-    print(f"\nModel: {model_short_name} ({model}) {_mod_tag(multimodal)}")
-    print(f"Output: {out_filename}")
+    print(f"\n[OpenRouter] Model: {model_short_name} ({model}) {_mod_tag(multimodal)}")
+    print(f"[OpenRouter] Output: {out_filename}")
 
     price_in = model_cfg.get("price_in", 0)
     price_out = model_cfg.get("price_out", 0)
@@ -214,9 +215,10 @@ def _run_openrouter(model_short_name):
             assert len(row) == 6, f"Expected 6 cols, got {len(row)} in row {row_num}"
             pdf_filename, _keys, text_djvu2hocr, text_tesseract411, text_tesseractmarch2020, text_combined = row
 
-            print(f"Processing row {row_num}: {pdf_filename}")
+            print(f"[OpenRouter] Processing row {row_num}: {pdf_filename}")
             call_log_base = {
                 "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "provider": "OpenRouter",
                 "model_short_name": model_short_name,
                 "model_full_name": model,
                 "tier": model_cfg.get("tier", ""),
@@ -232,7 +234,7 @@ def _run_openrouter(model_short_name):
                 line = f"error={error_msg}"
                 outfile.write(line + "\n")
                 rows_empty += 1
-                print(f"  -> ERROR: {error_msg[:120]}")
+                print(f"  [OpenRouter] -> ERROR: {error_msg[:120]}")
                 _append_call_log({**call_log_base, "status": "error", "elapsed_secs": 0,
                                   "prompt_tokens": 0, "completion_tokens": 0, "cost_usd": 0,
                                   "fields_extracted": 0, "error": error_msg[:500]})
@@ -249,12 +251,12 @@ def _run_openrouter(model_short_name):
 
             if fields:
                 rows_with_values += 1
-                print(f"  -> {line[:100]}  [{result['elapsed_secs']}s, ${row_cost:.6f}]")
+                print(f"  [OpenRouter] -> {line[:100]}  [{result['elapsed_secs']}s, ${row_cost:.6f}]")
                 for key in fields:
                     field_counts[key] = field_counts.get(key, 0) + 1
             else:
                 rows_empty += 1
-                print(f"  -> (no values extracted)  [{result['elapsed_secs']}s]")
+                print(f"  [OpenRouter] -> (no values extracted)  [{result['elapsed_secs']}s]")
 
             _append_call_log({**call_log_base, "status": "ok" if fields else "empty",
                               "elapsed_secs": result["elapsed_secs"],
@@ -263,9 +265,9 @@ def _run_openrouter(model_short_name):
                               "cost_usd": round(row_cost, 6),
                               "fields_extracted": len(fields), "error": ""})
 
-    _print_summary(model_short_name, multimodal, rows_with_values, rows_empty, field_counts,
+    _print_summary("OpenRouter", model_short_name, multimodal, rows_with_values, rows_empty, field_counts,
                    total_elapsed_secs, total_prompt_tokens, total_completion_tokens, total_cost_usd)
-    _append_stats(model_short_name, model_cfg, rows_with_values + rows_empty, rows_with_values, rows_empty,
+    _append_stats("OpenRouter", model_short_name, model_cfg, rows_with_values + rows_empty, rows_with_values, rows_empty,
                   field_counts, total_elapsed_secs, total_prompt_tokens, total_completion_tokens, total_cost_usd)
 
 
@@ -276,14 +278,14 @@ def _run_openrouter(model_short_name):
 async def _process_row_doubleword(client, model_name, row_num, pdf_filename, text_combined):
     """Process a single row via the Doubleword batch API. Returns result dict."""
     import llm_doubleword
-    print(f"Processing row {row_num}: {pdf_filename}")
+    print(f"[Doubleword] Processing row {row_num}: {pdf_filename}")
     try:
         response_text = await llm_doubleword.call_llm(client, model_name, PROMPT_TEMPLATE, text_combined)
         fields = _parse_llm_response(response_text)
         return {"row_num": row_num, "fields": fields, "error": None}
     except Exception as e:
         error_msg = sanitize_error_message(str(e)).replace("\t", " ").replace("\n", " ")
-        print(f"  -> ERROR row {row_num}: {error_msg[:120]}")
+        print(f"  [Doubleword] -> ERROR row {row_num}: {error_msg[:120]}")
         return {"row_num": row_num, "fields": None, "error": error_msg}
 
 
@@ -293,15 +295,15 @@ async def _run_doubleword(model_short_name, completion_window="1h", batch_size=1
     model_cfg = DOUBLEWORD_MODELS[model_short_name]
     model = model_cfg["model"]
     multimodal = model_cfg["multimodal"]
-    out_filename = f"data/playgroup_dev_extracted__{model_short_name}.tsv"
+    out_filename = f"data/playgroup_dev_extracted__doubleword__{model_short_name}.tsv"
 
     if os.path.exists(out_filename):
-        print(f"Skipping {model_short_name} {_mod_tag(multimodal)}: {out_filename} already exists")
+        print(f"[Doubleword] Skipping {model_short_name} {_mod_tag(multimodal)}: {out_filename} already exists")
         return
 
-    print(f"\nModel: {model_short_name} ({model}) {_mod_tag(multimodal)}")
-    print(f"Output: {out_filename}")
-    print(f"Batch config: completion_window={completion_window}, batch_size={batch_size}")
+    print(f"\n[Doubleword] Model: {model_short_name} ({model}) {_mod_tag(multimodal)}")
+    print(f"[Doubleword] Output: {out_filename}")
+    print(f"[Doubleword] Batch config: completion_window={completion_window}, batch_size={batch_size}")
 
     csv.field_size_limit(10 * 1024 * 1024)
     rows = []
@@ -311,7 +313,7 @@ async def _run_doubleword(model_short_name, completion_window="1h", batch_size=1
             assert len(row) == 6, f"Expected 6 cols, got {len(row)} in row {row_num}"
             rows.append((row_num, row[0], row[5]))
 
-    print(f"Loaded {len(rows)} rows, submitting as batch...")
+    print(f"[Doubleword] Loaded {len(rows)} rows, submitting as batch...")
 
     client = llm_doubleword.create_client(
         completion_window=completion_window,
@@ -345,15 +347,15 @@ async def _run_doubleword(model_short_name, completion_window="1h", batch_size=1
 
             if fields:
                 rows_with_values += 1
-                print(f"  row {result['row_num']} -> {line[:100]}")
+                print(f"  [Doubleword] row {result['row_num']} -> {line[:100]}")
                 for key in fields:
                     field_counts[key] = field_counts.get(key, 0) + 1
             else:
                 rows_empty += 1
-                print(f"  row {result['row_num']} -> (no values extracted)")
+                print(f"  [Doubleword] row {result['row_num']} -> (no values extracted)")
 
-    _print_summary(model_short_name, multimodal, rows_with_values, rows_empty, field_counts)
-    _append_stats(model_short_name, model_cfg, rows_with_values + rows_empty, rows_with_values, rows_empty, field_counts)
+    _print_summary("Doubleword", model_short_name, multimodal, rows_with_values, rows_empty, field_counts)
+    _append_stats("Doubleword", model_short_name, model_cfg, rows_with_values + rows_empty, rows_with_values, rows_empty, field_counts)
 
 
 # ═══════════════════════════════════════════════════════════════════

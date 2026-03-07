@@ -57,7 +57,7 @@ def call_llm(model_name, prompt_template, extracted_text, max_ctx_tokens=None):
     # and quantization levels and we'll get inconsistent results
     only_providers = _get_providers(model_name)
     extra_params = {"provider": {"allow_fallbacks": False, "only": only_providers}}
-    logger.info("LLM calling with %s", model_name)
+    logger.info("[OpenRouter] Calling %s", model_name)
     messages = [
         {"role": "system", "content": instructions},
         {"role": "user", "content": prompt},
@@ -73,12 +73,12 @@ def call_llm(model_name, prompt_template, extracted_text, max_ctx_tokens=None):
             )
             break
         except json.JSONDecodeError:
-            logger.warning("Oops, got a JSONDecodeError after calling LLM")
+            logger.warning("[OpenRouter] JSONDecodeError after calling %s", model_name)
         except Exception as e:
             error_str = str(e)
             if "429" in error_str and attempt < max_retries:
                 wait = 2 ** attempt * 10  # 10s, 20s, 40s, 80s, 160s
-                logger.warning("Rate limited (429), waiting %ds before retry %d/%d", wait, attempt + 1, max_retries)
+                logger.warning("[OpenRouter] Rate limited (429) for %s, waiting %ds before retry %d/%d", model_name, wait, attempt + 1, max_retries)
                 time.sleep(wait)
             else:
                 raise
@@ -89,9 +89,9 @@ def call_llm(model_name, prompt_template, extracted_text, max_ctx_tokens=None):
     completion_tokens = getattr(usage, "completion_tokens", 0) or 0
 
     raw_text = response.choices[0].message.content
-    logger.info("Raw return from llm call:\n%s", raw_text)
+    logger.info("[OpenRouter] Response from %s, len=%d", model_name, len(raw_text) if raw_text else 0)
     extracted = utils.extract_from_triple_backticks(raw_text)
-    logger.info("Extracted answer:\n%s", extracted)
+    logger.info("[OpenRouter] Extracted answer from %s:\n%s", model_name, extracted)
     return {
         "text": extracted,
         "elapsed_secs": elapsed_secs,

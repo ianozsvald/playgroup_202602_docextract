@@ -291,7 +291,9 @@ def main():
     extraction_stats = load_extraction_stats()
     models_data = {}
     for model_file in sorted(DATA_DIR.glob("playgroup_dev_extracted__*.tsv")):
-        model_name = model_file.stem.replace("playgroup_dev_extracted__", "")
+        after_prefix = model_file.stem.replace("playgroup_dev_extracted__", "")
+        # New format: {provider}__{model} or legacy: {model}
+        model_name = after_prefix.split("__", 1)[-1] if "__" in after_prefix else after_prefix
         extracted_rows = parse_tsv(model_file)
         scores = score_model(expected_rows, extracted_rows)
         models_data[model_name] = scores
