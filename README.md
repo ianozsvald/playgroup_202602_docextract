@@ -44,13 +44,13 @@ Pass one or more model names as arguments, or omit to run all models. Runs are i
 
 ```bash
 # One model
-python extractor.py gemini-2.0-flash
+python extractor_openrouter.py gemini-2.0-flash
 
 # Several models
-python extractor.py gemini-2.0-flash deepseek-v3 llama-3.3-70b-free
+python extractor_openrouter.py gemini-2.0-flash deepseek-v3 llama-3.3-70b-free
 
-# All models in config_models.py (skips any already completed)
-python extractor.py
+# All models in config_models_openrouter.py (skips any already completed)
+python extractor_openrouter.py
 ```
 
 #### Doubleword Batch API (async, all rows in parallel — 80%+ cheaper)
@@ -102,17 +102,17 @@ deepseek-v3               text    81/110   73.6%     55.2    0.000456
 | `llm_openrouter.py` | LLM client for OpenRouter (synchronous). Run directly for a smoke test. |
 | `llm_doubleword.py` | LLM client for Doubleword Batch API (async, uses `autobatcher`). |
 | `extraction_and_prompt_example.py` | Simple single-model extraction loop, good for prompt experiments. |
-| `extractor.py` | OpenRouter extraction runner. Pass model name(s) as args; no args runs all. |
+| `extractor_openrouter.py` | OpenRouter extraction runner. Pass model name(s) as args; no args runs all. |
 | `extractor_doubleword.py` | Doubleword batch extraction runner. Submits all rows in parallel via `asyncio.gather`. Supports `--completion-window` and `--batch-size` flags. |
 | `score.py` | Scorer with time/cost columns. No args → ranked leaderboard; pass a filename → verbose diff. |
 | `utils.py` | Shared helpers (`extract_from_triple_backticks`, `sanitize_error_message`). |
-| `config_models.py` | OpenRouter model registry — 40+ models organised by tier. |
+| `config_models_openrouter.py` | OpenRouter model registry — 40+ models organised by tier. |
 | `config_models_doubleword.py` | Doubleword model registry — 8 models with batch pricing from [docs](https://docs.doubleword.ai/batches/model-pricing). |
 | `playground.py` | Interactive HTML playground with time/cost estimation and project evolution tabs. |
 
 ### Model Tiers
 
-#### OpenRouter (`config_models.py`)
+#### OpenRouter (`config_models_openrouter.py`)
 
 Models are grouped into four tiers by cost (per million input tokens):
 

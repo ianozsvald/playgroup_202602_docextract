@@ -67,7 +67,7 @@ If you see the JSON block, you're ready.
 
 See `README.md` for the full end-to-end workflow. The key commands follow a consistent pattern:
 
-- **Pass a model name** → run that model only (e.g. `python extractor.py gemini-2.0-flash`)
+- **Pass a model name** → run that model only (e.g. `python extractor_openrouter.py gemini-2.0-flash`)
 - **Pass multiple model names** → run each in turn
 - **Pass no args** → run all models; already-completed runs are skipped (idempotent)
 

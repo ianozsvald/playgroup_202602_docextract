@@ -2,7 +2,7 @@ import csv
 import glob
 import sys
 
-from config_models import VALUE_MODELS
+from config_models_openrouter import VALUE_MODELS
 
 
 def _mod_tag(model_name):

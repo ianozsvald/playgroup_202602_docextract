@@ -6,7 +6,7 @@ import sys
 from datetime import datetime
 
 import llm_openrouter
-from config_models import VALUE_MODELS
+from config_models_openrouter import VALUE_MODELS
 from utils import sanitize_error_message
 
 IN_FILENAME = "data/playgroup_dev_in.tsv"

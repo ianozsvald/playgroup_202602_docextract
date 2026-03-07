@@ -8,7 +8,7 @@ import sys
 
 import llm_doubleword
 from config_models_doubleword import DOUBLEWORD_MODELS
-from extractor import (
+from extractor_openrouter import (
     ALL_FIELDS,
     IN_FILENAME,
     PROMPT_TEMPLATE,
