@@ -1,7 +1,7 @@
 """Unified extraction orchestrator — supports OpenRouter (sync) and Doubleword Batch API (async).
 
 Backend is auto-detected from model prefix: dw-* models use Doubleword, all others use OpenRouter.
-Doubleword-specific flags (--completion-window, --batch-size) are ignored for OpenRouter models.
+Doubleword batches are submitted in parallel and polled with checkpoint/resume support.
 """
 
 import argparse
@@ -272,39 +272,15 @@ def _run_openrouter(model_short_name):
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  Doubleword backend (async, all rows in parallel via batch API)
+#  Doubleword backend (batch API with checkpoint/resume support)
+#  Two-phase: submit all models first, then poll all until complete.
 # ═══════════════════════════════════════════════════════════════════
 
-async def _process_row_doubleword(client, model_name, row_num, pdf_filename, text_combined):
-    """Process a single row via the Doubleword batch API. Returns result dict."""
-    import llm_doubleword
-    print(f"[Doubleword] Processing row {row_num}: {pdf_filename}")
-    try:
-        response_text = await llm_doubleword.call_llm(client, model_name, PROMPT_TEMPLATE, text_combined)
-        fields = _parse_llm_response(response_text)
-        return {"row_num": row_num, "fields": fields, "error": None}
-    except Exception as e:
-        error_msg = sanitize_error_message(str(e)).replace("\t", " ").replace("\n", " ")
-        print(f"  [Doubleword] -> ERROR row {row_num}: {error_msg[:120]}")
-        return {"row_num": row_num, "fields": None, "error": error_msg}
+DOUBLEWORD_POLL_INTERVAL = 10  # seconds between poll cycles
 
 
-async def _run_doubleword(model_short_name, completion_window="1h", batch_size=100):
-    import llm_doubleword
-
-    model_cfg = DOUBLEWORD_MODELS[model_short_name]
-    model = model_cfg["model"]
-    multimodal = model_cfg["multimodal"]
-    out_filename = f"data/playgroup_dev_extracted__doubleword__{model_short_name}.tsv"
-
-    if os.path.exists(out_filename):
-        print(f"[Doubleword] Skipping {model_short_name} {_mod_tag(multimodal)}: {out_filename} already exists")
-        return
-
-    print(f"\n[Doubleword] Model: {model_short_name} ({model}) {_mod_tag(multimodal)}")
-    print(f"[Doubleword] Output: {out_filename}")
-    print(f"[Doubleword] Batch config: completion_window={completion_window}, batch_size={batch_size}")
-
+def _load_input_rows():
+    """Load all input rows from the TSV. Returns list of (row_num, pdf_filename, text_combined)."""
     csv.field_size_limit(10 * 1024 * 1024)
     rows = []
     with open(IN_FILENAME, "r") as infile:
@@ -312,50 +288,176 @@ async def _run_doubleword(model_short_name, completion_window="1h", batch_size=1
         for row_num, row in enumerate(reader):
             assert len(row) == 6, f"Expected 6 cols, got {len(row)} in row {row_num}"
             rows.append((row_num, row[0], row[5]))
+    return rows
 
-    print(f"[Doubleword] Loaded {len(rows)} rows, submitting as batch...")
 
-    client = llm_doubleword.create_client(
-        completion_window=completion_window,
-        batch_size=batch_size,
-    )
-    try:
-        tasks = [
-            _process_row_doubleword(client, model, row_num, pdf_filename, text_combined)
-            for row_num, pdf_filename, text_combined in rows
-        ]
-        results = await asyncio.gather(*tasks)
-    finally:
-        await client.close()
+def _write_doubleword_results(model_short_name, results, rows, elapsed_secs):
+    """Write batch results to TSV, per-row call logs, and model stats.
 
-    results.sort(key=lambda r: r["row_num"])
+    Uses atomic write (temp file + rename) so a partial file is never left behind on cancel.
+    """
+    model_cfg = DOUBLEWORD_MODELS[model_short_name]
+    model = model_cfg["model"]
+    multimodal = model_cfg["multimodal"]
+    price_in = model_cfg.get("price_in", 0)
+    price_out = model_cfg.get("price_out", 0)
+    out_filename = f"data/playgroup_dev_extracted__doubleword__{model_short_name}.tsv"
+    tmp_filename = out_filename + ".tmp"
 
     rows_with_values = 0
     rows_empty = 0
     field_counts = {}
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+    total_cost_usd = 0.0
 
-    with open(out_filename, "w") as outfile:
-        for result in results:
-            if result["error"]:
-                outfile.write(f"error={result['error'][:500]}\n")
+    with open(tmp_filename, "w") as outfile:
+        for row_num, pdf_filename, _text in rows:
+            result = results.get(row_num)
+            call_log_base = {
+                "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "provider": "Doubleword",
+                "model_short_name": model_short_name,
+                "model_full_name": model,
+                "tier": model_cfg.get("tier", ""),
+                "multimodal": multimodal,
+                "row_num": row_num,
+                "pdf_filename": pdf_filename,
+            }
+
+            if result is None or "error" in result:
+                error_msg = result["error"][:500] if result else "No result returned"
+                outfile.write(f"error={error_msg}\n")
                 rows_empty += 1
+                _append_call_log({**call_log_base, "status": "error", "elapsed_secs": 0,
+                                  "prompt_tokens": 0, "completion_tokens": 0, "cost_usd": 0,
+                                  "fields_extracted": 0, "error": error_msg[:500]})
                 continue
 
-            fields = result["fields"]
+            fields = _parse_llm_response(result["text"])
             line = _row_to_tsv_line(fields)
             outfile.write(line + "\n")
 
+            prompt_tokens = result.get("prompt_tokens", 0)
+            completion_tokens = result.get("completion_tokens", 0)
+            row_cost = (prompt_tokens * price_in + completion_tokens * price_out) / 1_000_000
+            total_prompt_tokens += prompt_tokens
+            total_completion_tokens += completion_tokens
+            total_cost_usd += row_cost
+
             if fields:
                 rows_with_values += 1
-                print(f"  [Doubleword] row {result['row_num']} -> {line[:100]}")
+                print(f"  [Doubleword] {model_short_name} row {row_num} -> {line[:100]}  [${row_cost:.6f}]")
                 for key in fields:
                     field_counts[key] = field_counts.get(key, 0) + 1
             else:
                 rows_empty += 1
-                print(f"  [Doubleword] row {result['row_num']} -> (no values extracted)")
+                print(f"  [Doubleword] {model_short_name} row {row_num} -> (no values extracted)")
 
-    _print_summary("Doubleword", model_short_name, multimodal, rows_with_values, rows_empty, field_counts)
-    _append_stats("Doubleword", model_short_name, model_cfg, rows_with_values + rows_empty, rows_with_values, rows_empty, field_counts)
+            _append_call_log({**call_log_base, "status": "ok" if fields else "empty",
+                              "elapsed_secs": 0, "prompt_tokens": prompt_tokens,
+                              "completion_tokens": completion_tokens,
+                              "cost_usd": round(row_cost, 6),
+                              "fields_extracted": len(fields), "error": ""})
+
+    os.replace(tmp_filename, out_filename)
+
+    _print_summary("Doubleword", model_short_name, multimodal, rows_with_values, rows_empty, field_counts,
+                   elapsed_secs, total_prompt_tokens, total_completion_tokens, total_cost_usd)
+    _append_stats("Doubleword", model_short_name, model_cfg,
+                  rows_with_values + rows_empty, rows_with_values, rows_empty, field_counts,
+                  elapsed_secs, total_prompt_tokens, total_completion_tokens, total_cost_usd)
+
+
+async def _run_all_doubleword(models_to_run, completion_window="1h"):
+    """Submit all Doubleword models, then poll all batches until complete."""
+    import time
+    import llm_doubleword
+
+    rows = _load_input_rows()
+    checkpoint = llm_doubleword.load_checkpoint()
+    client = llm_doubleword.create_client()
+
+    # ── Phase 1: Submit (or resume from checkpoint) ──────────────
+    pending = {}  # model_short_name -> batch_id
+    submitted_at = {}  # model_short_name -> epoch timestamp
+
+    for model_short_name in models_to_run:
+        model_cfg = DOUBLEWORD_MODELS[model_short_name]
+        multimodal = model_cfg["multimodal"]
+        out_filename = f"data/playgroup_dev_extracted__doubleword__{model_short_name}.tsv"
+
+        if os.path.exists(out_filename):
+            print(f"[Doubleword] Skipping {model_short_name} {_mod_tag(multimodal)}: {out_filename} already exists")
+            continue
+
+        if model_short_name in checkpoint:
+            batch_id = checkpoint[model_short_name]["batch_id"]
+            try:
+                status, _, counts = await llm_doubleword.poll_batch(client, batch_id)
+            except Exception as e:
+                print(f"[Doubleword] Could not retrieve batch {batch_id} for {model_short_name}: {e}")
+                llm_doubleword.remove_checkpoint_entry(model_short_name)
+                status = None
+
+            if status in ("completed", "in_progress", "validating", "finalizing"):
+                print(f"[Doubleword] Resuming {model_short_name} {_mod_tag(multimodal)}: "
+                      f"batch {batch_id} ({status}, {counts['completed']}/{counts['total']})")
+                pending[model_short_name] = batch_id
+                submitted_at[model_short_name] = checkpoint[model_short_name].get("submitted_at", time.time())
+                continue
+            else:
+                print(f"[Doubleword] Batch {batch_id} for {model_short_name} is {status}, resubmitting")
+                llm_doubleword.remove_checkpoint_entry(model_short_name)
+
+        # Submit new batch
+        print(f"[Doubleword] Submitting {model_short_name} ({model_cfg['model']}) "
+              f"{_mod_tag(multimodal)}, {len(rows)} rows, window={completion_window}")
+        batch_id = await llm_doubleword.submit_batch(
+            client, model_short_name, model_cfg["model"],
+            PROMPT_TEMPLATE, rows, completion_window,
+        )
+        print(f"[Doubleword] Submitted {model_short_name}: batch {batch_id}")
+        pending[model_short_name] = batch_id
+        submitted_at[model_short_name] = time.time()
+
+    if not pending:
+        print("[Doubleword] All models already complete, nothing to do")
+        await client.close()
+        return
+
+    # ── Phase 2: Poll all batches until every one completes ──────
+    print(f"\n[Doubleword] Polling {len(pending)} batch(es)...")
+
+    while pending:
+        await asyncio.sleep(DOUBLEWORD_POLL_INTERVAL)
+        done = []
+
+        for model_short_name, batch_id in pending.items():
+            try:
+                status, output_file_id, counts = await llm_doubleword.poll_batch(client, batch_id)
+            except Exception as e:
+                print(f"  [{model_short_name}] Poll error: {e}")
+                continue
+
+            print(f"  [{model_short_name}] {status} ({counts['completed']}/{counts['total']})")
+
+            if status == "completed":
+                elapsed = time.time() - submitted_at[model_short_name]
+                results = await llm_doubleword.download_results(client, output_file_id)
+                _write_doubleword_results(model_short_name, results, rows, elapsed)
+                llm_doubleword.remove_checkpoint_entry(model_short_name)
+                done.append(model_short_name)
+            elif status in ("failed", "expired", "cancelled"):
+                print(f"  [{model_short_name}] Batch {status} — will need manual resubmission")
+                llm_doubleword.remove_checkpoint_entry(model_short_name)
+                done.append(model_short_name)
+
+        for m in done:
+            del pending[m]
+
+    await client.close()
+    print("[Doubleword] All batches complete")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -385,8 +487,6 @@ async def main():
                         help="Model short names to run (default: all models from both providers)")
     parser.add_argument("--completion-window", default="1h", choices=["1h", "24h"],
                         help="Doubleword batch completion window (default: 1h)")
-    parser.add_argument("--batch-size", type=int, default=100,
-                        help="Doubleword requests per batch (default: 100)")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--all-doubleword", action="store_true",
                        help="Run only Doubleword models")
@@ -403,12 +503,23 @@ async def main():
     else:
         models_to_run = list(ALL_MODELS)
 
+    # Partition models by backend
+    dw_models = []
+    or_models = []
     for model_short_name in models_to_run:
         backend = _resolve_model(model_short_name)
         if backend == "doubleword":
-            await _run_doubleword(model_short_name, args.completion_window, args.batch_size)
+            dw_models.append(model_short_name)
         else:
-            _run_openrouter(model_short_name)
+            or_models.append(model_short_name)
+
+    # Run OpenRouter models sequentially (sync, one row at a time)
+    for model_short_name in or_models:
+        _run_openrouter(model_short_name)
+
+    # Run all Doubleword models as one batch: submit all, then poll all
+    if dw_models:
+        await _run_all_doubleword(dw_models, args.completion_window)
 
 
 if __name__ == "__main__":
