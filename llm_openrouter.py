@@ -101,7 +101,8 @@ def call_llm(model_name, prompt_template, extracted_text, max_ctx_tokens=None):
 
 
 if __name__ == "__main__":
-    print("Openrouter API key: %s", os.getenv('OPENROUTER_API_KEY')[:10] + "...")
+    key = os.getenv('OPENROUTER_API_KEY', '')
+    print(f"OpenRouter API key: {'set (' + key[:4] + '...)' if key else 'NOT SET'}")
 
     #model_name = "deepseek/deepseek-v3.2-speciale"
     #model_name = "z-ai/glm-4.7"  # slow
