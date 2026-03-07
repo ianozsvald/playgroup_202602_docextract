@@ -77,14 +77,14 @@ python score.py
 python score.py data/playgroup_dev_extracted__openrouter__gemini-2.0-flash.tsv
 ```
 
-The leaderboard includes time and cost columns:
+The leaderboard is ranked by F1 and includes precision, recall, field counts, time, and cost:
 
 ```
-Provider     Model                     Mod    Score        %    Time(s)    Cost($)
----------------------------------------------------------------------------------
-openrouter   gemini-2.5-flash          MM      87/110   79.1%     42.3    0.001234
-openrouter   gemini-2.0-flash          MM      85/110   77.3%     38.1    0.000987
-doubleword   dw-qwen3-vl-30b           MM      83/110   75.5%     12.1    0.000321
+Provider     Model                     Mod    Docs     F1   Prec  Recall          Fields    Time(s)    Cost($)
+--------------------------------------------------------------------------------------------------------------
+openrouter   gemini-3-pro              MM       11  0.906  0.973   0.847     72/85 (85%)     ~629.1    ~0.3780
+openrouter   qwen3-235b                text     11  0.892  0.972   0.824     70/85 (82%)     ~629.1    ~0.0258
+doubleword   dw-qwen3.5-35b            text     11  0.877  0.971   0.800     68/85 (80%)     ~629.1    ~0.0131
 ...
 ```
 
@@ -100,7 +100,7 @@ doubleword   dw-qwen3-vl-30b           MM      83/110   75.5%     12.1    0.0003
 | `llm_doubleword.py` | LLM client for Doubleword Batch API (async, direct batch management with checkpoint/resume). |
 | `extraction_and_prompt_example.py` | Simple single-model extraction loop, good for prompt experiments. |
 | `extractor.py` | Unified extraction runner. Auto-detects backend from model prefix (`dw-*` → Doubleword batch, others → OpenRouter). Doubleword models are submitted in parallel and polled with checkpoint/resume. Supports `--completion-window`, `--all-doubleword`, and `--all-openrouter` flags. |
-| `score.py` | Scorer with provider/time/cost columns. No args → ranked leaderboard; pass a filename → verbose diff. |
+| `score.py` | Scorer with F1/Precision/Recall. No args → ranked leaderboard; pass a filename → verbose field-by-field diff. |
 | `utils.py` | Shared helpers (`extract_from_triple_backticks`, `sanitize_error_message`). |
 | `config_models_openrouter.py` | OpenRouter model registry — 40+ models organised by tier. |
 | `config_models_doubleword.py` | Doubleword model registry — 8 models with batch pricing from [docs](https://docs.doubleword.ai/batches/model-pricing). |
