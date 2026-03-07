@@ -30,11 +30,14 @@ If `uv` isn't installed: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
 # .env
 
-You'll need a `.env` file with your OpenRouter API key (get it from Slack):
+You'll need a `.env` file with your API keys:
 
 ```
 OPENROUTER_API_KEY=sk-or-v1-...
+DOUBLEWORD_API_KEY=your-doubleword-api-key-here   # optional, for batch extraction
 ```
+
+The OpenRouter key is required. The Doubleword key is only needed if you want to run `extractor_doubleword.py`.
 
 ---
 

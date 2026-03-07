@@ -1,6 +1,6 @@
 # UK Charity Document Extraction — Multi-Model Benchmark
 
-Extract structured fields from UK charity financial PDFs using LLMs via [OpenRouter](https://openrouter.ai/), then score and rank the results across 40+ models.
+Extract structured fields from UK charity financial PDFs using LLMs via [OpenRouter](https://openrouter.ai/) or the [Doubleword Batch API](https://docs.doubleword.ai/batches/getting-started-with-batched-api), then score and rank the results across 40+ models.
 
 ---
 
@@ -40,6 +40,8 @@ Reads `data/playgroup_dev_in.tsv`, sends each row to `claude-3.5-haiku`, and pri
 
 Pass one or more model names as arguments, or omit to run all models. Runs are idempotent — if the output file already exists for a model, that model is skipped.
 
+#### OpenRouter (synchronous, one row at a time)
+
 ```bash
 # One model
 python extractor.py gemini-2.0-flash
@@ -51,7 +53,20 @@ python extractor.py gemini-2.0-flash deepseek-v3 llama-3.3-70b-free
 python extractor.py
 ```
 
-Each run writes `data/playgroup_dev_extracted__<model-name>.tsv` and appends a row to `data/extraction_stats.csv` (row counts and per-field hit rates).
+#### Doubleword Batch API (async, all rows in parallel — 80%+ cheaper)
+
+```bash
+# One model
+python extractor_doubleword.py dw-qwen3-vl-30b
+
+# With 24h completion window (cheapest)
+python extractor_doubleword.py --completion-window 24h dw-qwen3-14b
+
+# All Doubleword models
+python extractor_doubleword.py
+```
+
+Each run writes `data/playgroup_dev_extracted__<model-name>.tsv`, appends to `data/extraction_stats.csv` (row counts, per-field hit rates, time and cost), and logs per-row details to `data/extraction_call_log.csv`.
 
 ### 3. Score and rank all models
 
@@ -65,14 +80,14 @@ python score.py
 python score.py data/playgroup_dev_extracted__gemini-2.0-flash.tsv
 ```
 
-The leaderboard output looks like:
+The leaderboard includes time and cost columns:
 
 ```
-Model                     Mod    Score        %
-----------------------------------------------------
-gemini-2.5-flash          MM      87/110   79.1%
-gemini-2.0-flash          MM      85/110   77.3%
-deepseek-v3               text    81/110   73.6%
+Model                     Mod    Score        %    Time(s)    Cost($)
+----------------------------------------------------------------------
+gemini-2.5-flash          MM      87/110   79.1%     42.3    0.001234
+gemini-2.0-flash          MM      85/110   77.3%     38.1    0.000987
+deepseek-v3               text    81/110   73.6%     55.2    0.000456
 ...
 ```
 
@@ -84,26 +99,41 @@ deepseek-v3               text    81/110   73.6%
 
 | File | Purpose |
 |---|---|
-| `llm_openrouter.py` | Low-level LLM client (OpenRouter API). Run directly for a smoke test. |
+| `llm_openrouter.py` | LLM client for OpenRouter (synchronous). Run directly for a smoke test. |
+| `llm_doubleword.py` | LLM client for Doubleword Batch API (async, uses `autobatcher`). |
 | `extraction_and_prompt_example.py` | Simple single-model extraction loop, good for prompt experiments. |
-| `extractor.py` | Main extraction runner. Pass model name(s) as args to run specific models; no args runs all models idempotently (skips completed). |
-| `score.py` | Scorer. No args → ranked leaderboard across all extracted files. Pass a filename → verbose field-by-field diff for that model. |
-| `utils.py` | Shared helpers (`extract_from_triple_backticks`, etc.). |
-| `config_models.py` | Model registry — 40+ models organised by tier. |
-| `playground.py` | Ad-hoc experiments. |
+| `extractor.py` | OpenRouter extraction runner. Pass model name(s) as args; no args runs all. |
+| `extractor_doubleword.py` | Doubleword batch extraction runner. Submits all rows in parallel via `asyncio.gather`. Supports `--completion-window` and `--batch-size` flags. |
+| `score.py` | Scorer with time/cost columns. No args → ranked leaderboard; pass a filename → verbose diff. |
+| `utils.py` | Shared helpers (`extract_from_triple_backticks`, `sanitize_error_message`). |
+| `config_models.py` | OpenRouter model registry — 40+ models organised by tier. |
+| `config_models_doubleword.py` | Doubleword model registry — 8 models with batch pricing from [docs](https://docs.doubleword.ai/batches/model-pricing). |
+| `playground.py` | Interactive HTML playground with time/cost estimation and project evolution tabs. |
 
-### Model Tiers (`config_models.py`)
+### Model Tiers
+
+#### OpenRouter (`config_models.py`)
 
 Models are grouped into four tiers by cost (per million input tokens):
 
 | Tier | Cost | Examples |
 |---|---|---|
-| `free` | $0 | `llama-3.3-70b-free`, `gemini-flash-free`, `qwen3-vl-30b-free` |
+| `free` | $0 | `llama-3.3-70b-free`, `gemma-3-27b-free`, `gemma-3n-free` |
 | `ultra_cheap` | < $0.30 | `gemini-2.0-flash`, `deepseek-v3`, `qwen-2.5-vl-7b` |
 | `great_value` | $0.30–$1.00 | `claude-3.5-haiku`, `qwen-2.5-vl-72b`, `deepseek-r1` |
 | `premium` | > $1.00 | `gemini-3-pro`, `pixtral-large`, `mistral-large` |
 
-Each model entry includes: OpenRouter model ID, `multimodal` flag, supported modalities, context length, and notes.
+#### Doubleword Batch API (`config_models_doubleword.py`)
+
+Prefixed with `dw-`. Pricing is for the 1h batch tier (24h is 30-50% cheaper):
+
+| Tier | Cost | Examples |
+|---|---|---|
+| `ultra_cheap` | < $0.05 | `dw-qwen3.5-9b`, `dw-qwen3-14b`, `dw-gpt-oss-20b` |
+| `great_value` | $0.05–$0.15 | `dw-qwen3.5-35b`, `dw-qwen3-vl-30b` |
+| `premium` | > $0.15 | `dw-qwen3.5-397b`, `dw-qwen3-vl-235b` |
+
+Each model entry includes: model ID, `multimodal` flag, supported modalities, context length, and notes.
 
 ### Data (`data/`)
 
@@ -113,14 +143,15 @@ Each model entry includes: OpenRouter model ID, `multimodal` flag, supported mod
 | `playgroup_dev_expected.tsv` | Ground truth field values |
 | `pdf_names.txt` | PDF filenames in row order |
 | `playgroup_dev_extracted__<model>.tsv` | Per-model extraction output (one file per run) |
-| `extraction_stats.csv` | Cumulative run stats: model, row counts, per-field hit rates |
+| `extraction_stats.csv` | Cumulative run stats: model, row counts, per-field hit rates, time, cost |
+| `extraction_call_log.csv` | Per-row call log: model, row, status, elapsed time, tokens, cost |
 | `*.pdf` | 11 UK charity financial PDFs (≤ 200 pages each) |
 
 ### Visualisations
 
 | File | Description |
 |---|---|
-| `which-models-extracted-playground.html` | Interactive leaderboard |
+| `which-models-extracted-playground.html` | Interactive leaderboard with time/cost estimation and project evolution tabs |
 | `architecture_animated.svg` | Animated pipeline architecture diagram |
 | `performance_animated.svg` | Animated performance comparison |
 
