@@ -378,9 +378,11 @@ async def _run_all_doubleword(models_to_run, completion_window="1h"):
     checkpoint = llm_doubleword.load_checkpoint()
     client = llm_doubleword.create_client()
 
-    # ── Phase 1: Submit (or resume from checkpoint) ──────────────
-    pending = {}  # model_short_name -> batch_id
+    # ── Phase 1: Triage models into new vs resumable ───────────
+    pending = {}  # model_short_name -> batch_id (ordered: resumed first, then new)
     submitted_at = {}  # model_short_name -> epoch timestamp
+    to_submit = []  # models needing fresh submission
+    to_resume = []  # (model_short_name, batch_id, submitted_at) from checkpoint
 
     for model_short_name in models_to_run:
         model_cfg = DOUBLEWORD_MODELS[model_short_name]
@@ -392,25 +394,14 @@ async def _run_all_doubleword(models_to_run, completion_window="1h"):
             continue
 
         if model_short_name in checkpoint:
-            batch_id = checkpoint[model_short_name]["batch_id"]
-            try:
-                status, _, counts = await llm_doubleword.poll_batch(client, batch_id)
-            except Exception as e:
-                print(f"[Doubleword] Could not retrieve batch {batch_id} for {model_short_name}: {e}")
-                llm_doubleword.remove_checkpoint_entry(model_short_name)
-                status = None
+            to_resume.append(model_short_name)
+        else:
+            to_submit.append(model_short_name)
 
-            if status in ("completed", "in_progress", "validating", "finalizing"):
-                print(f"[Doubleword] Resuming {model_short_name} {_mod_tag(multimodal)}: "
-                      f"batch {batch_id} ({status}, {counts['completed']}/{counts['total']})")
-                pending[model_short_name] = batch_id
-                submitted_at[model_short_name] = checkpoint[model_short_name].get("submitted_at", time.time())
-                continue
-            else:
-                print(f"[Doubleword] Batch {batch_id} for {model_short_name} is {status}, resubmitting")
-                llm_doubleword.remove_checkpoint_entry(model_short_name)
-
-        # Submit new batch
+    # ── Phase 2: Submit new models first (get them queued ASAP) ──
+    for model_short_name in to_submit:
+        model_cfg = DOUBLEWORD_MODELS[model_short_name]
+        multimodal = model_cfg["multimodal"]
         print(f"[Doubleword] Submitting {model_short_name} ({model_cfg['model']}) "
               f"{_mod_tag(multimodal)}, {len(rows)} rows, window={completion_window}")
         batch_id = await llm_doubleword.submit_batch(
@@ -421,12 +412,51 @@ async def _run_all_doubleword(models_to_run, completion_window="1h"):
         pending[model_short_name] = batch_id
         submitted_at[model_short_name] = time.time()
 
+    # ── Phase 3: Verify and resume checkpointed models ───────────
+    #   These were submitted earlier, so they're closer to completion.
+    #   Added to pending AFTER new submissions so poll order is: resumed (oldest) first.
+    resumed_pending = {}
+    for model_short_name in to_resume:
+        cp_entry = checkpoint[model_short_name]
+        batch_id = cp_entry["batch_id"]
+        try:
+            status, _, counts = await llm_doubleword.poll_batch(client, batch_id)
+        except Exception as e:
+            print(f"[Doubleword] Could not retrieve batch {batch_id} for {model_short_name}: {e}")
+            llm_doubleword.remove_checkpoint_entry(model_short_name)
+            continue
+
+        if status in ("completed", "in_progress", "validating", "finalizing"):
+            multimodal = DOUBLEWORD_MODELS[model_short_name]["multimodal"]
+            print(f"[Doubleword] Resuming {model_short_name} {_mod_tag(multimodal)}: "
+                  f"batch {batch_id} ({status}, {counts['completed']}/{counts['total']})")
+            resumed_pending[model_short_name] = batch_id
+            submitted_at[model_short_name] = cp_entry.get("submitted_at", time.time())
+        else:
+            print(f"[Doubleword] Batch {batch_id} for {model_short_name} is {status}, resubmitting")
+            llm_doubleword.remove_checkpoint_entry(model_short_name)
+            model_cfg = DOUBLEWORD_MODELS[model_short_name]
+            multimodal = model_cfg["multimodal"]
+            print(f"[Doubleword] Submitting {model_short_name} ({model_cfg['model']}) "
+                  f"{_mod_tag(multimodal)}, {len(rows)} rows, window={completion_window}")
+            batch_id = await llm_doubleword.submit_batch(
+                client, model_short_name, model_cfg["model"],
+                PROMPT_TEMPLATE, rows, completion_window,
+            )
+            print(f"[Doubleword] Submitted {model_short_name}: batch {batch_id}")
+            pending[model_short_name] = batch_id
+            submitted_at[model_short_name] = time.time()
+
+    # Merge: resumed first (oldest, most likely to complete soon), then newly submitted
+    pending = {**resumed_pending, **pending}
+
     if not pending:
         print("[Doubleword] All models already complete, nothing to do")
         await client.close()
         return
 
-    # ── Phase 2: Poll all batches until every one completes ──────
+    # ── Phase 4: Poll all batches until every one completes ──────
+    #   Order: resumed (oldest) first, then newly submitted.
     print(f"\n[Doubleword] Polling {len(pending)} batch(es)...")
 
     while pending:
