@@ -457,20 +457,25 @@ async def _run_all_doubleword(models_to_run, completion_window="1h"):
 
     # ── Phase 4: Poll all batches until every one completes ──────
     #   Order: resumed (oldest) first, then newly submitted.
-    print(f"\n[Doubleword] Polling {len(pending)} batch(es)...")
+    total_models = len(pending)
+    completed_models = 0
+    failed_models = 0
+    print(f"\n[Doubleword] Polling {total_models} batch(es)...")
 
     while pending:
         await asyncio.sleep(DOUBLEWORD_POLL_INTERVAL)
         done = []
+        poll_summary = []  # collect per-model status for big-picture print
 
         for model_short_name, batch_id in pending.items():
             try:
                 status, output_file_id, counts = await llm_doubleword.poll_batch(client, batch_id)
             except Exception as e:
                 print(f"  [{model_short_name}] Poll error: {e}")
+                poll_summary.append(f"{model_short_name}:error")
                 continue
 
-            print(f"  [{model_short_name}] {status} ({counts['completed']}/{counts['total']})")
+            poll_summary.append(f"{model_short_name}:{counts['completed']}/{counts['total']}")
 
             if status == "completed":
                 elapsed = time.time() - submitted_at[model_short_name]
@@ -478,16 +483,24 @@ async def _run_all_doubleword(models_to_run, completion_window="1h"):
                 _write_doubleword_results(model_short_name, results, rows, elapsed)
                 llm_doubleword.remove_checkpoint_entry(model_short_name)
                 done.append(model_short_name)
+                completed_models += 1
             elif status in ("failed", "expired", "cancelled"):
                 print(f"  [{model_short_name}] Batch {status} — will need manual resubmission")
                 llm_doubleword.remove_checkpoint_entry(model_short_name)
                 done.append(model_short_name)
+                failed_models += 1
 
         for m in done:
             del pending[m]
 
+        # Big-picture progress
+        remaining = len(pending)
+        print(f"  [Progress] {completed_models}/{total_models} done, "
+              f"{remaining} pending, {failed_models} failed  |  "
+              + "  ".join(poll_summary))
+
     await client.close()
-    print("[Doubleword] All batches complete")
+    print(f"[Doubleword] All batches complete ({completed_models} succeeded, {failed_models} failed)")
 
 
 # ═══════════════════════════════════════════════════════════════════

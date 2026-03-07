@@ -26,18 +26,46 @@ def get_all_items(filename):
 
 
 def score(expected_items, predicted_items, verbose=True):
-    total = 0
-    correct = 0
+    """Score predicted vs expected using precision, recall, F1.
+
+    Returns dict with: tp, fp, fn, precision, recall, f1, fields_found, fields_total, docs.
+    """
+    tp = 0  # predicted matches expected
+    fp = 0  # predicted but wrong or not in expected
+    fn = 0  # in expected but not predicted
+
     for row_num, expected_row in enumerate(expected_items):
         predicted_row = predicted_items[row_num] if row_num < len(predicted_items) else {}
+
+        # Check expected fields (recall side)
         for key, expected_val in expected_row.items():
-            total += 1
             predicted_val = predicted_row.get(key)
             if predicted_val == expected_val:
-                correct += 1
-            elif verbose:
-                print(f"  Row {row_num}: {key} expected='{expected_val}' predicted='{predicted_val}'")
-    return correct, total
+                tp += 1
+            else:
+                fn += 1
+                if verbose:
+                    print(f"  Row {row_num}: {key} expected='{expected_val}' predicted='{predicted_val}'")
+
+        # Check predicted fields not in expected (precision side — spurious fields)
+        for key in predicted_row:
+            if key not in expected_row:
+                fp += 1
+                if verbose:
+                    print(f"  Row {row_num}: {key} spurious='{predicted_row[key]}' (not in expected)")
+
+    fields_total = tp + fn  # total expected fields
+    fields_found = tp       # correctly matched fields
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+
+    return {
+        "tp": tp, "fp": fp, "fn": fn,
+        "precision": precision, "recall": recall, "f1": f1,
+        "fields_found": fields_found, "fields_total": fields_total,
+        "docs": len(expected_items),
+    }
 
 
 def _load_stats(stats_filename="data/extraction_stats.csv",
@@ -123,12 +151,16 @@ def score_all_models(expected_filename, verbose=False):
         predicted_items = get_all_items(predicted_filename)
         if verbose:
             print(f"\n--- [{provider}] {model_name} [{_mod_tag(model_name)}] ---")
-        correct, total = score(expected_items, predicted_items, verbose=verbose)
+        scores = score(expected_items, predicted_items, verbose=verbose)
         model_stats = stats.get(model_name, {})
-        results.append((provider, model_name, correct, total,
-                         model_stats.get("elapsed_secs", 0),
-                         model_stats.get("cost_usd", 0),
-                         model_stats.get("estimated", False)))
+        results.append({
+            "provider": provider,
+            "model_name": model_name,
+            **scores,
+            "elapsed_secs": model_stats.get("elapsed_secs", 0),
+            "cost_usd": model_stats.get("cost_usd", 0),
+            "estimated": model_stats.get("estimated", False),
+        })
     return results
 
 
@@ -140,18 +172,27 @@ if __name__ == "__main__":
         predicted_filename = sys.argv[1]
         expected_items = get_all_items(expected_filename)
         predicted_items = get_all_items(predicted_filename)
-        correct, total = score(expected_items, predicted_items, verbose=True)
-        print(f"\nScore: {correct}/{total}")
+        s = score(expected_items, predicted_items, verbose=True)
+        print(f"\nF1: {s['f1']:.3f}  Precision: {s['precision']:.3f}  Recall: {s['recall']:.3f}"
+              f"  Fields: {s['fields_found']}/{s['fields_total']} ({100*s['fields_found']/s['fields_total']:.0f}%)"
+              f"  Docs: {s['docs']}")
     else:
-        # Score all models
+        # Score all models — leaderboard ranked by F1
         results = score_all_models(expected_filename, verbose=False)
-        print(f"\n{'Provider':<12} {'Model':<25} {'Mod':<6} {'Score':>10}  {'%':>7}  {'Time(s)':>9}  {'Cost($)':>9}")
-        print("-" * 87)
-        results.sort(key=lambda r: r[2] / r[3] if r[3] else 0, reverse=True)
-        for provider, model_name, correct, total, elapsed, cost, estimated in results:
-            pct = 100 * correct / total if total else 0
-            prefix = "~" if estimated else ""
-            time_str = f"{prefix}{elapsed:.1f}" if elapsed else "-"
-            cost_str = f"{prefix}{cost:.4f}" if cost else "-"
-            print(f"{provider:<12} {model_name:<25} {_mod_tag(model_name):<6} {correct:>4}/{total:<4}  {pct:>6.1f}%  {time_str:>9}  {cost_str:>9}")
+        header = (f"{'Provider':<12} {'Model':<25} {'Mod':<6} {'Docs':>4}"
+                  f"  {'F1':>5}  {'Prec':>5}  {'Recall':>6}"
+                  f"  {'Fields':>14}  {'Time(s)':>9}  {'Cost($)':>9}")
+        print(f"\n{header}")
+        print("-" * len(header))
+        results.sort(key=lambda r: r["f1"], reverse=True)
+        for r in results:
+            prefix = "~" if r["estimated"] else ""
+            time_str = f"{prefix}{r['elapsed_secs']:.1f}" if r["elapsed_secs"] else "-"
+            cost_str = f"{prefix}{r['cost_usd']:.4f}" if r["cost_usd"] else "-"
+            ft = r["fields_total"]
+            ff = r["fields_found"]
+            fields_str = f"{ff}/{ft} ({100*ff/ft:.0f}%)" if ft else "-"
+            print(f"{r['provider']:<12} {r['model_name']:<25} {_mod_tag(r['model_name']):<6} {r['docs']:>4}"
+                  f"  {r['f1']:>5.3f}  {r['precision']:>5.3f}  {r['recall']:>6.3f}"
+                  f"  {fields_str:>14}  {time_str:>9}  {cost_str:>9}")
         print(f"\n  ~ = estimated from config pricing x avg tokens")
