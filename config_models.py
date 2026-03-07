@@ -336,3 +336,5 @@ VALUE_MODELS = {
         "notes":      "124B vision MoE, strong document parsing",
     },
 }
+
+from config_models_doubleword import DOUBLEWORD_MODELS
