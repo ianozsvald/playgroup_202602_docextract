@@ -89,7 +89,7 @@ def score(expected_items, predicted_items, verbose=True):
             fn += (1.0 - sim)
             if verbose and sim < 1.0:
                 sim_str = f" (sim={sim:.2f})" if 0 < sim < 1 else ""
-                log.info("  Row %d: %s expected='%s' predicted='%s'%s",
+                log.info("  Row {}: {} expected='{}' predicted='{}'{}",
                          row_num, key, expected_val, predicted_val, sim_str)
 
         # Check predicted fields not in expected (precision side)
@@ -97,7 +97,7 @@ def score(expected_items, predicted_items, verbose=True):
             if key not in expected_row:
                 fp += 1
                 if verbose:
-                    log.info("  Row %d: %s spurious='%s' (not in expected)",
+                    log.info("  Row {}: {} spurious='{}' (not in expected)",
                              row_num, key, predicted_row[key])
 
     fields_total = tp + fn   # total expected fields (always integer, but float for consistency)
@@ -196,7 +196,7 @@ def score_all_models(expected_filename, verbose=False):
             model_name = after_prefix
         predicted_items = get_all_items(predicted_filename)
         if verbose:
-            log.info("--- [%s] %s [%s] ---", provider, model_name, _mod_tag(model_name))
+            log.info("--- [{}] {} [{}] ---", provider, model_name, _mod_tag(model_name))
         scores = score(expected_items, predicted_items, verbose=verbose)
         model_stats = stats.get(model_name, {})
         results.append({

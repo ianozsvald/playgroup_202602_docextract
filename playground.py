@@ -306,7 +306,7 @@ def main():
         models_data[model_name] = scores
         model_providers[model_name] = provider
         mm_tag = "MM" if model_meta.get(model_name, {}).get("multimodal") else "text"
-        log.info("  [%s] %s  %s  %.1f%%  (%d/%d)",
+        log.info("  [{}] {}  {}  {:.1f}%  ({}/{})",
                  provider, f"{model_name:35s}", f"{mm_tag:<6}",
                  scores['accuracy'] * 100, scores['total_correct'], scores['total_expected'])
     payload = {
@@ -323,7 +323,7 @@ def main():
 
     html = HTML_TEMPLATE.replace("/*__DATA__*/null", json.dumps(payload))
     OUTPUT_FILE.write_text(html)
-    log.info("Wrote %s  —  open in your browser", OUTPUT_FILE)
+    log.info("Wrote {}  —  open in your browser", OUTPUT_FILE)
 
 
 # ── HTML Template ─────────────────────────────────────────────────────────────
