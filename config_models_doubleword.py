@@ -1,55 +1,94 @@
 # Doubleword Batch API models — model names use HuggingFace conventions
 # Verify model availability at https://app.doubleword.ai/ before running
-# Pricing shown is approximate Doubleword batch pricing (significantly cheaper than real-time)
+# Pricing from https://docs.doubleword.ai/batches/model-pricing
+# Prices shown are "High" (1h) batch tier — "Standard" (24h) is ~30-50% cheaper
 
 DOUBLEWORD_MODELS = {
 
-    # ── Multimodal (Vision + Language) ──────────────────────────
+    # ═══════════════════════════════════════════════════════════
+    #  TEXT-ONLY MODELS
+    # ═══════════════════════════════════════════════════════════
+
+    "dw-qwen3.5-9b": {
+        "model":      "Qwen/Qwen3.5-9B",
+        "multimodal": False,
+        "modalities": ["text"],
+        "tier":       "ultra_cheap",
+        "price_in":   0.04, "price_out": 0.35,
+        "ctx":        262_000,
+        "notes":      "9B reasoning model, 262K ctx, extremely cost-efficient",
+    },
+    "dw-qwen3-14b": {
+        "model":      "Qwen/Qwen3-14B-FP8",
+        "multimodal": False,
+        "modalities": ["text"],
+        "tier":       "ultra_cheap",
+        "price_in":   0.03, "price_out": 0.30,
+        "ctx":        262_000,
+        "notes":      "14B, best for high-volume extraction/classification",
+    },
+    "dw-gpt-oss-20b": {
+        "model":      "openai/gpt-oss-20b",
+        "multimodal": False,
+        "modalities": ["text"],
+        "tier":       "ultra_cheap",
+        "price_in":   0.03, "price_out": 0.20,
+        "ctx":        262_000,
+        "notes":      "21B (3.6B active), OpenAI open-source, low latency",
+    },
+    "dw-qwen3.5-35b": {
+        "model":      "Qwen/Qwen3.5-35B-A3B-FP8",
+        "multimodal": False,
+        "modalities": ["text"],
+        "tier":       "great_value",
+        "price_in":   0.07, "price_out": 0.30,
+        "ctx":        262_000,
+        "notes":      "35B MoE (3B active), thinking mode, strong price/perf",
+    },
+    "dw-qwen3.5-397b": {
+        "model":      "Qwen/Qwen3.5-397B-A17B",
+        "multimodal": False,
+        "modalities": ["text"],
+        "tier":       "premium",
+        "price_in":   0.30, "price_out": 1.80,
+        "ctx":        262_000,
+        "notes":      "397B MoE (17B active), Qwen flagship, frontier-level",
+    },
+
+    # ═══════════════════════════════════════════════════════════
+    #  VISION-LANGUAGE MODELS
+    # ═══════════════════════════════════════════════════════════
+
     "dw-qwen3-vl-30b": {
         "model":      "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8",
         "multimodal": True,
         "modalities": ["text", "image", "video"],
         "tier":       "great_value",
-        "price_in":   0.03, "price_out": 0.10,
-        "ctx":        131_000,
-        "notes":      "30B VL MoE, strong doc/OCR, Doubleword reference model",
+        "price_in":   0.07, "price_out": 0.30,
+        "ctx":        262_000,
+        "notes":      "30B VL MoE, GPT-4.1-mini class, Doubleword reference model",
     },
-    "dw-qwen-2.5-vl-72b": {
-        "model":      "Qwen/Qwen2.5-VL-72B-Instruct",
+    "dw-qwen3-vl-235b": {
+        "model":      "Qwen/Qwen3-VL-235B-A22B-Instruct-FP8",
         "multimodal": True,
         "modalities": ["text", "image", "video"],
-        "tier":       "great_value",
-        "price_in":   0.16, "price_out": 0.16,
-        "ctx":        33_000,
-        "notes":      "72B VL flagship, best open doc AI, 32-lang OCR",
+        "tier":       "premium",
+        "price_in":   0.15, "price_out": 0.55,
+        "ctx":        262_000,
+        "notes":      "235B VL MoE, GPT-5/Claude Opus class multimodal",
     },
 
-    # ── Text-only ───────────────────────────────────────────────
-    "dw-qwen3-235b": {
-        "model":      "Qwen/Qwen3-235B-A22B-FP8",
-        "multimodal": False,
-        "modalities": ["text"],
-        "tier":       "great_value",
-        "price_in":   0.03, "price_out": 0.08,
-        "ctx":        41_000,
-        "notes":      "235B MoE (22B active), frontier open-source reasoning",
-    },
-    "dw-llama-3.3-70b": {
-        "model":      "meta-llama/Llama-3.3-70B-Instruct",
-        "multimodal": False,
-        "modalities": ["text"],
-        "tier":       "great_value",
-        "price_in":   0.08, "price_out": 0.18,
-        "ctx":        131_000,
-        "notes":      "Strong multilingual 70B, 8 languages",
-    },
-    "dw-mistral-small": {
-        "model":      "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+    # ═══════════════════════════════════════════════════════════
+    #  EMBEDDING MODEL
+    # ═══════════════════════════════════════════════════════════
+
+    "dw-qwen3-embedding-8b": {
+        "model":      "Qwen/Qwen3-Embedding-8B",
         "multimodal": False,
         "modalities": ["text"],
         "tier":       "ultra_cheap",
-        "price_in":   0.02, "price_out": 0.06,
-        "ctx":        33_000,
-        "notes":      "24B, fast and efficient, Apache 2.0",
+        "price_in":   0.03, "price_out": 0.00,
+        "ctx":        32_000,
+        "notes":      "8B embedding, 4096-dim, #1 MTEB multilingual, 100+ langs",
     },
 }
