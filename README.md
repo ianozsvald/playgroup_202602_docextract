@@ -47,8 +47,11 @@ python extractor.py gemini-2.0-flash
 # Several OpenRouter models
 python extractor.py gemini-2.0-flash deepseek-v3 llama-3.3-70b-free
 
-# All OpenRouter models (default)
+# All models from both providers (default)
 python extractor.py
+
+# All OpenRouter models only
+python extractor.py --all-openrouter
 
 # One Doubleword model (auto-detected by dw- prefix)
 python extractor.py dw-qwen3-vl-30b
@@ -60,7 +63,7 @@ python extractor.py gemini-2.0-flash dw-qwen3-14b
 python extractor.py --all-doubleword --completion-window 24h
 ```
 
-Each run writes `data/playgroup_dev_extracted__<model-name>.tsv`, appends to `data/extraction_stats.csv` (row counts, per-field hit rates, time and cost), and logs per-row details to `data/extraction_call_log.csv`.
+Each run writes `data/playgroup_dev_extracted__<provider>__<model-name>.tsv`, appends to `data/extraction_stats.csv` (provider, row counts, per-field hit rates, time and cost), and logs per-row details to `data/extraction_call_log.csv`.
 
 ### 3. Score and rank all models
 
@@ -71,17 +74,17 @@ Pass a filename to see a verbose field-by-field diff for one model, or omit to s
 python score.py
 
 # Verbose diff for one model
-python score.py data/playgroup_dev_extracted__gemini-2.0-flash.tsv
+python score.py data/playgroup_dev_extracted__openrouter__gemini-2.0-flash.tsv
 ```
 
 The leaderboard includes time and cost columns:
 
 ```
-Model                     Mod    Score        %    Time(s)    Cost($)
-----------------------------------------------------------------------
-gemini-2.5-flash          MM      87/110   79.1%     42.3    0.001234
-gemini-2.0-flash          MM      85/110   77.3%     38.1    0.000987
-deepseek-v3               text    81/110   73.6%     55.2    0.000456
+Provider     Model                     Mod    Score        %    Time(s)    Cost($)
+---------------------------------------------------------------------------------
+openrouter   gemini-2.5-flash          MM      87/110   79.1%     42.3    0.001234
+openrouter   gemini-2.0-flash          MM      85/110   77.3%     38.1    0.000987
+doubleword   dw-qwen3-vl-30b           MM      83/110   75.5%     12.1    0.000321
 ...
 ```
 
@@ -96,8 +99,8 @@ deepseek-v3               text    81/110   73.6%     55.2    0.000456
 | `llm_openrouter.py` | LLM client for OpenRouter (synchronous). Run directly for a smoke test. |
 | `llm_doubleword.py` | LLM client for Doubleword Batch API (async, uses `autobatcher`). |
 | `extraction_and_prompt_example.py` | Simple single-model extraction loop, good for prompt experiments. |
-| `extractor.py` | Unified extraction runner. Auto-detects backend from model prefix (`dw-*` → Doubleword batch, others → OpenRouter). Supports `--completion-window`, `--batch-size`, and `--all-doubleword` flags. |
-| `score.py` | Scorer with time/cost columns. No args → ranked leaderboard; pass a filename → verbose diff. |
+| `extractor.py` | Unified extraction runner. Auto-detects backend from model prefix (`dw-*` → Doubleword batch, others → OpenRouter). Supports `--completion-window`, `--batch-size`, `--all-doubleword`, and `--all-openrouter` flags. |
+| `score.py` | Scorer with provider/time/cost columns. No args → ranked leaderboard; pass a filename → verbose diff. |
 | `utils.py` | Shared helpers (`extract_from_triple_backticks`, `sanitize_error_message`). |
 | `config_models_openrouter.py` | OpenRouter model registry — 40+ models organised by tier. |
 | `config_models_doubleword.py` | Doubleword model registry — 8 models with batch pricing from [docs](https://docs.doubleword.ai/batches/model-pricing). |
@@ -135,9 +138,9 @@ Each model entry includes: model ID, `multimodal` flag, supported modalities, co
 | `playgroup_dev_in.tsv` | Input: 11 PDFs × 6 columns (filename, keys, 3 OCR text variants, combined text) |
 | `playgroup_dev_expected.tsv` | Ground truth field values |
 | `pdf_names.txt` | PDF filenames in row order |
-| `playgroup_dev_extracted__<model>.tsv` | Per-model extraction output (one file per run) |
-| `extraction_stats.csv` | Cumulative run stats: model, row counts, per-field hit rates, time, cost |
-| `extraction_call_log.csv` | Per-row call log: model, row, status, elapsed time, tokens, cost |
+| `playgroup_dev_extracted__<provider>__<model>.tsv` | Per-model extraction output (one file per run) |
+| `extraction_stats.csv` | Cumulative run stats: provider, model, row counts, per-field hit rates, time, cost |
+| `extraction_call_log.csv` | Per-row call log: provider, model, row, status, elapsed time, tokens, cost |
 | `*.pdf` | 11 UK charity financial PDFs (≤ 200 pages each) |
 
 ### Visualisations

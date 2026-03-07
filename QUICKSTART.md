@@ -69,7 +69,8 @@ See `README.md` for the full end-to-end workflow. The key commands follow a cons
 
 - **Pass a model name** → run that model only (e.g. `python extractor.py gemini-2.0-flash`)
 - **Pass multiple model names** → run each in turn (backend auto-detected per model)
-- **Pass no args** → run all OpenRouter models; already-completed runs are skipped (idempotent)
-- **Use `--all-doubleword`** → run all Doubleword batch models instead
+- **Pass no args** → run all models from both providers; already-completed runs are skipped (idempotent)
+- **Use `--all-openrouter`** → run only OpenRouter models
+- **Use `--all-doubleword`** → run only Doubleword batch models
 
 The same applies to `score.py`: no args scores all models and prints a leaderboard; pass a filename for a verbose diff of one model.

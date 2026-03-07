@@ -382,21 +382,26 @@ async def main():
                     "Backend is auto-detected: dw-* models use Doubleword, others use OpenRouter."
     )
     parser.add_argument("models", nargs="*",
-                        help="Model short names to run (default: all OpenRouter models)")
+                        help="Model short names to run (default: all models from both providers)")
     parser.add_argument("--completion-window", default="1h", choices=["1h", "24h"],
                         help="Doubleword batch completion window (default: 1h)")
     parser.add_argument("--batch-size", type=int, default=100,
                         help="Doubleword requests per batch (default: 100)")
-    parser.add_argument("--all-doubleword", action="store_true",
-                        help="Run all Doubleword models instead of OpenRouter")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--all-doubleword", action="store_true",
+                       help="Run only Doubleword models")
+    group.add_argument("--all-openrouter", action="store_true",
+                       help="Run only OpenRouter models")
     args = parser.parse_args()
 
     if args.models:
         models_to_run = args.models
     elif args.all_doubleword:
         models_to_run = list(DOUBLEWORD_MODELS)
-    else:
+    elif args.all_openrouter:
         models_to_run = list(OPENROUTER_MODELS)
+    else:
+        models_to_run = list(ALL_MODELS)
 
     for model_short_name in models_to_run:
         backend = _resolve_model(model_short_name)
