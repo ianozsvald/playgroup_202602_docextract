@@ -63,7 +63,7 @@ python extractor.py gemini-2.0-flash dw-qwen3-14b
 python extractor.py --all-doubleword --completion-window 24h
 ```
 
-Each run writes `data/playgroup_dev_extracted__<provider>__<model-name>.tsv`, appends to `data/extraction_stats.csv` (provider, row counts, per-field hit rates, time and cost), and logs per-row details to `data/extraction_call_log.csv`.
+Each run prints a per-provider plan (which models will run, skip, or resume) then executes extraction. On completion it prints a combined summary with completed/skipped/failed counts. Output files: `data/playgroup_dev_extracted__<provider>__<model-name>.tsv`, `data/extraction_stats.csv` (provider, row counts, per-field hit rates, time and cost), and `data/extraction_call_log.csv` (per-row details).
 
 ### 3. Score and rank all models
 
@@ -99,7 +99,7 @@ doubleword   dw-qwen3.5-35b            text     11  0.877  0.971   0.800     68/
 | `llm_openrouter.py` | LLM client for OpenRouter (synchronous). Run directly for a smoke test. |
 | `llm_doubleword.py` | LLM client for Doubleword Batch API (async, direct batch management with checkpoint/resume). |
 | `extraction_and_prompt_example.py` | Simple single-model extraction loop, good for prompt experiments. |
-| `extractor.py` | Unified extraction runner. Auto-detects backend from model prefix (`dw-*` → Doubleword batch, others → OpenRouter). Doubleword models are submitted in parallel and polled with checkpoint/resume. Supports `--completion-window`, `--all-doubleword`, and `--all-openrouter` flags. |
+| `extractor.py` | Unified extraction runner. Auto-detects backend from model prefix (`dw-*` → Doubleword batch, others → OpenRouter). Doubleword models are submitted in parallel and polled with checkpoint/resume. Prints a per-provider run plan at start and a combined summary at end (completed/skipped/failed counts). Supports `--completion-window`, `--all-doubleword`, and `--all-openrouter` flags. |
 | `score.py` | Scorer with F1/Precision/Recall. No args → ranked leaderboard; pass a filename → verbose field-by-field diff. |
 | `utils.py` | Shared helpers (`extract_from_triple_backticks`, `sanitize_error_message`). |
 | `config_models_openrouter.py` | OpenRouter model registry — 40+ models organised by tier. |

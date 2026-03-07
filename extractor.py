@@ -184,6 +184,7 @@ def _print_summary(provider, model_short_name, multimodal, rows_with_values, row
 # ═══════════════════════════════════════════════════════════════════
 
 def _run_openrouter(model_short_name):
+    """Run extraction for one OpenRouter model. Returns status: 'completed', 'skipped', or 'failed'."""
     model_cfg = OPENROUTER_MODELS[model_short_name]
     model = model_cfg["model"]
     multimodal = model_cfg["multimodal"]
@@ -192,7 +193,7 @@ def _run_openrouter(model_short_name):
 
     if os.path.exists(out_filename):
         print(f"[OpenRouter] Skipping {model_short_name} {_mod_tag(multimodal)}: {out_filename} already exists")
-        return
+        return "skipped"
 
     print(f"\n[OpenRouter] Model: {model_short_name} ({model}) {_mod_tag(multimodal)}")
     print(f"[OpenRouter] Output: {out_filename}")
@@ -269,6 +270,7 @@ def _run_openrouter(model_short_name):
                    total_elapsed_secs, total_prompt_tokens, total_completion_tokens, total_cost_usd)
     _append_stats("OpenRouter", model_short_name, model_cfg, rows_with_values + rows_empty, rows_with_values, rows_empty,
                   field_counts, total_elapsed_secs, total_prompt_tokens, total_completion_tokens, total_cost_usd)
+    return "completed"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -370,13 +372,18 @@ def _write_doubleword_results(model_short_name, results, rows, elapsed_secs):
 
 
 async def _run_all_doubleword(models_to_run, completion_window="1h"):
-    """Submit all Doubleword models, then poll all batches until complete."""
+    """Submit all Doubleword models, then poll all batches until complete.
+
+    Returns dict of {model_short_name: status} where status is
+    'completed', 'failed', or 'skipped'.
+    """
     import time
     import llm_doubleword
 
     rows = _load_input_rows()
     checkpoint = llm_doubleword.load_checkpoint()
     client = llm_doubleword.create_client()
+    statuses = {}  # model_short_name -> status
 
     # ── Phase 1: Triage models into new vs resumable ───────────
     pending = {}  # model_short_name -> batch_id (ordered: resumed first, then new)
@@ -391,6 +398,7 @@ async def _run_all_doubleword(models_to_run, completion_window="1h"):
 
         if os.path.exists(out_filename):
             print(f"[Doubleword] Skipping {model_short_name} {_mod_tag(multimodal)}: {out_filename} already exists")
+            statuses[model_short_name] = "skipped"
             continue
 
         if model_short_name in checkpoint:
@@ -453,7 +461,7 @@ async def _run_all_doubleword(models_to_run, completion_window="1h"):
     if not pending:
         print("[Doubleword] All models already complete, nothing to do")
         await client.close()
-        return
+        return statuses
 
     # ── Phase 4: Poll all batches until every one completes ──────
     #   Order: resumed (oldest) first, then newly submitted.
@@ -484,11 +492,13 @@ async def _run_all_doubleword(models_to_run, completion_window="1h"):
                 llm_doubleword.remove_checkpoint_entry(model_short_name)
                 done.append(model_short_name)
                 completed_models += 1
+                statuses[model_short_name] = "completed"
             elif status in ("failed", "expired", "cancelled"):
                 print(f"  [{model_short_name}] Batch {status} — will need manual resubmission")
                 llm_doubleword.remove_checkpoint_entry(model_short_name)
                 done.append(model_short_name)
                 failed_models += 1
+                statuses[model_short_name] = status
 
         for m in done:
             del pending[m]
@@ -501,6 +511,65 @@ async def _run_all_doubleword(models_to_run, completion_window="1h"):
 
     await client.close()
     print(f"[Doubleword] All batches complete ({completed_models} succeeded, {failed_models} failed)")
+    return statuses
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Run summary
+# ═══════════════════════════════════════════════════════════════════
+
+def _print_provider_plan(provider, models, checkpoint=None):
+    """Print pre-run plan for a provider group showing what will run/skip/resume."""
+    to_run = []
+    to_skip = []
+    to_resume = []
+    for m in models:
+        out_filename = f"data/playgroup_dev_extracted__{provider}__{m}.tsv"
+        if os.path.exists(out_filename):
+            to_skip.append(m)
+        elif checkpoint and m in checkpoint:
+            to_resume.append(m)
+        else:
+            to_run.append(m)
+
+    print(f"\n--- [{provider.capitalize()}] {len(models)} models ---")
+    if to_run:
+        print(f"  Will run  : {', '.join(to_run)}")
+    if to_resume:
+        print(f"  Resuming  : {', '.join(to_resume)}")
+    if to_skip:
+        print(f"  Skipping  : {', '.join(to_skip)} (output exists)")
+    if not to_run and not to_resume:
+        print(f"  Nothing to do (all skipped)")
+
+
+def _print_run_summary(all_statuses):
+    """Print a final summary table grouped by provider and status."""
+    if not all_statuses:
+        return
+
+    # Group by status
+    by_status = {}
+    for (provider, model), status in all_statuses.items():
+        by_status.setdefault(status, []).append((provider, model))
+
+    print(f"\n{'='*60}")
+    print("Run Summary")
+    print(f"{'='*60}")
+    for status in ("completed", "skipped", "failed", "cancelled", "expired", "unknown"):
+        models = by_status.get(status, [])
+        if not models:
+            continue
+        label = status.capitalize().ljust(10)
+        model_list = ", ".join(f"{m} ({p})" for p, m in models)
+        print(f"  {label}: {model_list}")
+
+    total = len(all_statuses)
+    completed = len(by_status.get("completed", []))
+    skipped = len(by_status.get("skipped", []))
+    failed_count = sum(len(by_status.get(s, [])) for s in ("failed", "cancelled", "expired", "unknown"))
+    print(f"\n  Total: {total}  |  Completed: {completed}  |  Skipped: {skipped}  |  Failed: {failed_count}")
+    print(f"{'='*60}")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -556,13 +625,32 @@ async def main():
         else:
             or_models.append(model_short_name)
 
+    # Print run plan
+    print(f"\n{'='*60}")
+    print(f"Extraction run: {len(or_models)} OpenRouter + {len(dw_models)} Doubleword models")
+    print(f"{'='*60}")
+
+    if or_models:
+        _print_provider_plan("openrouter", or_models)
+    if dw_models:
+        from llm_doubleword import load_checkpoint
+        _print_provider_plan("doubleword", dw_models, checkpoint=load_checkpoint())
+
+    all_statuses = {}  # (provider, model) -> status
+
     # Run OpenRouter models sequentially (sync, one row at a time)
     for model_short_name in or_models:
-        _run_openrouter(model_short_name)
+        status = _run_openrouter(model_short_name)
+        all_statuses[("openrouter", model_short_name)] = status or "failed"
 
     # Run all Doubleword models as one batch: submit all, then poll all
     if dw_models:
-        await _run_all_doubleword(dw_models, args.completion_window)
+        dw_statuses = await _run_all_doubleword(dw_models, args.completion_window) or {}
+        for model_short_name in dw_models:
+            all_statuses[("doubleword", model_short_name)] = dw_statuses.get(model_short_name, "unknown")
+
+    # Final summary
+    _print_run_summary(all_statuses)
 
 
 if __name__ == "__main__":
