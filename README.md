@@ -97,9 +97,9 @@ doubleword   dw-qwen3-vl-30b           MM      83/110   75.5%     12.1    0.0003
 | File | Purpose |
 |---|---|
 | `llm_openrouter.py` | LLM client for OpenRouter (synchronous). Run directly for a smoke test. |
-| `llm_doubleword.py` | LLM client for Doubleword Batch API (async, uses `autobatcher`). |
+| `llm_doubleword.py` | LLM client for Doubleword Batch API (async, direct batch management with checkpoint/resume). |
 | `extraction_and_prompt_example.py` | Simple single-model extraction loop, good for prompt experiments. |
-| `extractor.py` | Unified extraction runner. Auto-detects backend from model prefix (`dw-*` → Doubleword batch, others → OpenRouter). Supports `--completion-window`, `--batch-size`, `--all-doubleword`, and `--all-openrouter` flags. |
+| `extractor.py` | Unified extraction runner. Auto-detects backend from model prefix (`dw-*` → Doubleword batch, others → OpenRouter). Doubleword models are submitted in parallel and polled with checkpoint/resume. Supports `--completion-window`, `--all-doubleword`, and `--all-openrouter` flags. |
 | `score.py` | Scorer with provider/time/cost columns. No args → ranked leaderboard; pass a filename → verbose diff. |
 | `utils.py` | Shared helpers (`extract_from_triple_backticks`, `sanitize_error_message`). |
 | `config_models_openrouter.py` | OpenRouter model registry — 40+ models organised by tier. |
@@ -141,6 +141,7 @@ Each model entry includes: model ID, `multimodal` flag, supported modalities, co
 | `playgroup_dev_extracted__<provider>__<model>.tsv` | Per-model extraction output (one file per run) |
 | `extraction_stats.csv` | Cumulative run stats: provider, model, row counts, per-field hit rates, time, cost |
 | `extraction_call_log.csv` | Per-row call log: provider, model, row, status, elapsed time, tokens, cost |
+| `.doubleword_checkpoints.json` | Doubleword batch checkpoint: maps model → batch_id for resume on cancel/re-run |
 | `*.pdf` | 11 UK charity financial PDFs (≤ 200 pages each) |
 
 ### Visualisations
