@@ -6,6 +6,9 @@ from datetime import datetime, timezone
 from loguru import logger
 
 # ── Shared loguru logging ─────────────────────────────────────────
+# Uses default loguru level colors (matching autobatcher):
+#   DEBUG=blue, INFO=bold, WARNING=yellow, ERROR=red, CRITICAL=bold red
+
 # Remove default handler; add our own with module name from extra["name"]
 logger.remove()
 logger.add(
