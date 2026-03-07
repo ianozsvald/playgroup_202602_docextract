@@ -639,12 +639,19 @@ async def main():
     all_statuses = {}  # (provider, model) -> status
 
     # Run OpenRouter models sequentially (sync, one row at a time)
-    for model_short_name in or_models:
-        status = _run_openrouter(model_short_name)
-        all_statuses[("openrouter", model_short_name)] = status or "failed"
+    if or_models:
+        print(f"\n{'─'*60}")
+        print(f"Starting OpenRouter ({len(or_models)} models)")
+        print(f"{'─'*60}")
+        for model_short_name in or_models:
+            status = _run_openrouter(model_short_name)
+            all_statuses[("openrouter", model_short_name)] = status or "failed"
 
     # Run all Doubleword models as one batch: submit all, then poll all
     if dw_models:
+        print(f"\n{'─'*60}")
+        print(f"Starting Doubleword ({len(dw_models)} models)")
+        print(f"{'─'*60}")
         dw_statuses = await _run_all_doubleword(dw_models, args.completion_window) or {}
         for model_short_name in dw_models:
             all_statuses[("doubleword", model_short_name)] = dw_statuses.get(model_short_name, "unknown")
