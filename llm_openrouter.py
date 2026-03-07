@@ -9,7 +9,7 @@ import utils
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-_fh = logging.FileHandler("llm_calls.log")
+_fh = logging.FileHandler("llm_openrouter_calls.log")
 _fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
 logger.addHandler(_fh)
 
