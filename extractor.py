@@ -1,12 +1,20 @@
+"""Unified extraction orchestrator — supports OpenRouter (sync) and Doubleword Batch API (async).
+
+Backend is auto-detected from model prefix: dw-* models use Doubleword, all others use OpenRouter.
+Doubleword-specific flags (--completion-window, --batch-size) are ignored for OpenRouter models.
+"""
+
+import argparse
+import asyncio
 import csv
 import json
 import os
-import re
 import sys
 from datetime import datetime
 
 import llm_openrouter
-from config_models_openrouter import VALUE_MODELS
+from config_models_doubleword import DOUBLEWORD_MODELS
+from config_models_openrouter import OPENROUTER_MODELS
 from utils import sanitize_error_message
 
 IN_FILENAME = "data/playgroup_dev_in.tsv"
@@ -58,6 +66,8 @@ The raw text from the document follows:
 
 ADDRESS_FIELDS = {"address__postcode", "address__post_town", "address__street_line"}
 NUMERIC_FIELDS = {"income_annually_in_british_pounds", "spending_annually_in_british_pounds"}
+
+ALL_MODELS = {**OPENROUTER_MODELS, **DOUBLEWORD_MODELS}
 
 
 def _mod_tag(multimodal):
@@ -150,12 +160,30 @@ def _append_stats(model_short_name, model_cfg, total, rows_with_values, rows_emp
     print(f"  Stats appended to {STATS_FILENAME}")
 
 
-def run_extraction(model_short_name):
-    if model_short_name not in VALUE_MODELS:
-        available = ", ".join(f"{k}{_mod_tag(VALUE_MODELS[k]['multimodal'])}" for k in VALUE_MODELS)
-        print(f"Unknown model '{model_short_name}'. Available: {available}")
-        sys.exit(1)
-    model_cfg = VALUE_MODELS[model_short_name]
+def _print_summary(model_short_name, multimodal, rows_with_values, rows_empty, field_counts,
+                    total_elapsed_secs=None, total_prompt_tokens=None, total_completion_tokens=None, total_cost_usd=None):
+    total = rows_with_values + rows_empty
+    print(f"\n--- {model_short_name} {_mod_tag(multimodal)} summary ---")
+    print(f"  Rows with values : {rows_with_values}/{total}")
+    print(f"  Rows empty       : {rows_empty}/{total}")
+    if total_elapsed_secs is not None:
+        print(f"  Total time       : {total_elapsed_secs:.1f}s")
+    if total_prompt_tokens is not None:
+        print(f"  Total tokens     : {total_prompt_tokens} in / {total_completion_tokens} out")
+    if total_cost_usd is not None:
+        print(f"  Total cost       : ${total_cost_usd:.6f}")
+    if field_counts:
+        print("  Fields found (out of rows with values):")
+        for field, count in sorted(field_counts.items()):
+            print(f"    {field}: {count}/{rows_with_values}")
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  OpenRouter backend (synchronous, one row at a time)
+# ═══════════════════════════════════════════════════════════════════
+
+def _run_openrouter(model_short_name):
+    model_cfg = OPENROUTER_MODELS[model_short_name]
     model = model_cfg["model"]
     multimodal = model_cfg["multimodal"]
     max_ctx_tokens = model_cfg.get("ctx")
@@ -168,8 +196,8 @@ def run_extraction(model_short_name):
     print(f"\nModel: {model_short_name} ({model}) {_mod_tag(multimodal)}")
     print(f"Output: {out_filename}")
 
-    price_in = model_cfg.get("price_in", 0)   # $ per 1M input tokens
-    price_out = model_cfg.get("price_out", 0)  # $ per 1M output tokens
+    price_in = model_cfg.get("price_in", 0)
+    price_out = model_cfg.get("price_out", 0)
 
     rows_with_values = 0
     rows_empty = 0
@@ -179,7 +207,7 @@ def run_extraction(model_short_name):
     total_completion_tokens = 0
     total_cost_usd = 0.0
 
-    csv.field_size_limit(10 * 1024 * 1024)  # 10MB — TSV rows contain large OCR text blocks
+    csv.field_size_limit(10 * 1024 * 1024)
     with open(IN_FILENAME, "r") as infile, open(out_filename, "w") as outfile:
         reader = csv.reader(infile, delimiter="\t", quoting=csv.QUOTE_NONE)
         for row_num, row in enumerate(reader):
@@ -210,7 +238,6 @@ def run_extraction(model_short_name):
                                   "fields_extracted": 0, "error": error_msg[:500]})
                 continue
 
-            # Accumulate cost & time
             row_cost = (result["prompt_tokens"] * price_in + result["completion_tokens"] * price_out) / 1_000_000
             total_elapsed_secs += result["elapsed_secs"]
             total_prompt_tokens += result["prompt_tokens"]
@@ -236,22 +263,146 @@ def run_extraction(model_short_name):
                               "cost_usd": round(row_cost, 6),
                               "fields_extracted": len(fields), "error": ""})
 
-    total = rows_with_values + rows_empty
-    print(f"\n--- {model_short_name} {_mod_tag(multimodal)} summary ---")
-    print(f"  Rows with values : {rows_with_values}/{total}")
-    print(f"  Rows empty       : {rows_empty}/{total}")
-    print(f"  Total time       : {total_elapsed_secs:.1f}s")
-    print(f"  Total tokens     : {total_prompt_tokens} in / {total_completion_tokens} out")
-    print(f"  Total cost       : ${total_cost_usd:.6f}")
-    if field_counts:
-        print("  Fields found (out of rows with values):")
-        for field, count in sorted(field_counts.items()):
-            print(f"    {field}: {count}/{rows_with_values}")
-    _append_stats(model_short_name, model_cfg, total, rows_with_values, rows_empty, field_counts,
-                  total_elapsed_secs, total_prompt_tokens, total_completion_tokens, total_cost_usd)
+    _print_summary(model_short_name, multimodal, rows_with_values, rows_empty, field_counts,
+                   total_elapsed_secs, total_prompt_tokens, total_completion_tokens, total_cost_usd)
+    _append_stats(model_short_name, model_cfg, rows_with_values + rows_empty, rows_with_values, rows_empty,
+                  field_counts, total_elapsed_secs, total_prompt_tokens, total_completion_tokens, total_cost_usd)
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Doubleword backend (async, all rows in parallel via batch API)
+# ═══════════════════════════════════════════════════════════════════
+
+async def _process_row_doubleword(client, model_name, row_num, pdf_filename, text_combined):
+    """Process a single row via the Doubleword batch API. Returns result dict."""
+    import llm_doubleword
+    print(f"Processing row {row_num}: {pdf_filename}")
+    try:
+        response_text = await llm_doubleword.call_llm(client, model_name, PROMPT_TEMPLATE, text_combined)
+        fields = _parse_llm_response(response_text)
+        return {"row_num": row_num, "fields": fields, "error": None}
+    except Exception as e:
+        error_msg = sanitize_error_message(str(e)).replace("\t", " ").replace("\n", " ")
+        print(f"  -> ERROR row {row_num}: {error_msg[:120]}")
+        return {"row_num": row_num, "fields": None, "error": error_msg}
+
+
+async def _run_doubleword(model_short_name, completion_window="1h", batch_size=100):
+    import llm_doubleword
+
+    model_cfg = DOUBLEWORD_MODELS[model_short_name]
+    model = model_cfg["model"]
+    multimodal = model_cfg["multimodal"]
+    out_filename = f"data/playgroup_dev_extracted__{model_short_name}.tsv"
+
+    if os.path.exists(out_filename):
+        print(f"Skipping {model_short_name} {_mod_tag(multimodal)}: {out_filename} already exists")
+        return
+
+    print(f"\nModel: {model_short_name} ({model}) {_mod_tag(multimodal)}")
+    print(f"Output: {out_filename}")
+    print(f"Batch config: completion_window={completion_window}, batch_size={batch_size}")
+
+    csv.field_size_limit(10 * 1024 * 1024)
+    rows = []
+    with open(IN_FILENAME, "r") as infile:
+        reader = csv.reader(infile, delimiter="\t", quoting=csv.QUOTE_NONE)
+        for row_num, row in enumerate(reader):
+            assert len(row) == 6, f"Expected 6 cols, got {len(row)} in row {row_num}"
+            rows.append((row_num, row[0], row[5]))
+
+    print(f"Loaded {len(rows)} rows, submitting as batch...")
+
+    client = llm_doubleword.create_client(
+        completion_window=completion_window,
+        batch_size=batch_size,
+    )
+    try:
+        tasks = [
+            _process_row_doubleword(client, model, row_num, pdf_filename, text_combined)
+            for row_num, pdf_filename, text_combined in rows
+        ]
+        results = await asyncio.gather(*tasks)
+    finally:
+        await client.close()
+
+    results.sort(key=lambda r: r["row_num"])
+
+    rows_with_values = 0
+    rows_empty = 0
+    field_counts = {}
+
+    with open(out_filename, "w") as outfile:
+        for result in results:
+            if result["error"]:
+                outfile.write(f"error={result['error'][:500]}\n")
+                rows_empty += 1
+                continue
+
+            fields = result["fields"]
+            line = _row_to_tsv_line(fields)
+            outfile.write(line + "\n")
+
+            if fields:
+                rows_with_values += 1
+                print(f"  row {result['row_num']} -> {line[:100]}")
+                for key in fields:
+                    field_counts[key] = field_counts.get(key, 0) + 1
+            else:
+                rows_empty += 1
+                print(f"  row {result['row_num']} -> (no values extracted)")
+
+    _print_summary(model_short_name, multimodal, rows_with_values, rows_empty, field_counts)
+    _append_stats(model_short_name, model_cfg, rows_with_values + rows_empty, rows_with_values, rows_empty, field_counts)
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  CLI — auto-detects backend from model prefix
+# ═══════════════════════════════════════════════════════════════════
+
+def _resolve_model(model_short_name):
+    """Return (model_cfg, backend) or exit with error."""
+    if model_short_name in DOUBLEWORD_MODELS:
+        return "doubleword"
+    if model_short_name in OPENROUTER_MODELS:
+        return "openrouter"
+    available_or = ", ".join(f"{k}{_mod_tag(OPENROUTER_MODELS[k]['multimodal'])}" for k in OPENROUTER_MODELS)
+    available_dw = ", ".join(f"{k}{_mod_tag(DOUBLEWORD_MODELS[k]['multimodal'])}" for k in DOUBLEWORD_MODELS)
+    print(f"Unknown model '{model_short_name}'.")
+    print(f"  OpenRouter models: {available_or}")
+    print(f"  Doubleword models: {available_dw}")
+    sys.exit(1)
+
+
+async def main():
+    parser = argparse.ArgumentParser(
+        description="Extract charity data using OpenRouter or Doubleword Batch API. "
+                    "Backend is auto-detected: dw-* models use Doubleword, others use OpenRouter."
+    )
+    parser.add_argument("models", nargs="*",
+                        help="Model short names to run (default: all OpenRouter models)")
+    parser.add_argument("--completion-window", default="1h", choices=["1h", "24h"],
+                        help="Doubleword batch completion window (default: 1h)")
+    parser.add_argument("--batch-size", type=int, default=100,
+                        help="Doubleword requests per batch (default: 100)")
+    parser.add_argument("--all-doubleword", action="store_true",
+                        help="Run all Doubleword models instead of OpenRouter")
+    args = parser.parse_args()
+
+    if args.models:
+        models_to_run = args.models
+    elif args.all_doubleword:
+        models_to_run = list(DOUBLEWORD_MODELS)
+    else:
+        models_to_run = list(OPENROUTER_MODELS)
+
+    for model_short_name in models_to_run:
+        backend = _resolve_model(model_short_name)
+        if backend == "doubleword":
+            await _run_doubleword(model_short_name, args.completion_window, args.batch_size)
+        else:
+            _run_openrouter(model_short_name)
 
 
 if __name__ == "__main__":
-    models_to_run = sys.argv[1:] if len(sys.argv) > 1 else list(VALUE_MODELS)
-    for model_short_name in models_to_run:
-        run_extraction(model_short_name)
+    asyncio.run(main())

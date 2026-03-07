@@ -38,32 +38,26 @@ Reads `data/playgroup_dev_in.tsv`, sends each row to `claude-3.5-haiku`, and pri
 
 ### 2. Run extraction across one or more models
 
-Pass one or more model names as arguments, or omit to run all models. Runs are idempotent — if the output file already exists for a model, that model is skipped.
-
-#### OpenRouter (synchronous, one row at a time)
+Pass one or more model names as arguments, or omit to run all models. The backend is auto-detected: `dw-*` models use the Doubleword Batch API (async, parallel), all others use OpenRouter (sync, sequential). Runs are idempotent — if the output file already exists for a model, that model is skipped.
 
 ```bash
-# One model
-python extractor_openrouter.py gemini-2.0-flash
+# One OpenRouter model
+python extractor.py gemini-2.0-flash
 
-# Several models
-python extractor_openrouter.py gemini-2.0-flash deepseek-v3 llama-3.3-70b-free
+# Several OpenRouter models
+python extractor.py gemini-2.0-flash deepseek-v3 llama-3.3-70b-free
 
-# All models in config_models_openrouter.py (skips any already completed)
-python extractor_openrouter.py
-```
+# All OpenRouter models (default)
+python extractor.py
 
-#### Doubleword Batch API (async, all rows in parallel — 80%+ cheaper)
+# One Doubleword model (auto-detected by dw- prefix)
+python extractor.py dw-qwen3-vl-30b
 
-```bash
-# One model
-python extractor_doubleword.py dw-qwen3-vl-30b
+# Mix both backends in one command
+python extractor.py gemini-2.0-flash dw-qwen3-14b
 
-# With 24h completion window (cheapest)
-python extractor_doubleword.py --completion-window 24h dw-qwen3-14b
-
-# All Doubleword models
-python extractor_doubleword.py
+# All Doubleword models with 24h window (cheapest)
+python extractor.py --all-doubleword --completion-window 24h
 ```
 
 Each run writes `data/playgroup_dev_extracted__<model-name>.tsv`, appends to `data/extraction_stats.csv` (row counts, per-field hit rates, time and cost), and logs per-row details to `data/extraction_call_log.csv`.
@@ -102,8 +96,7 @@ deepseek-v3               text    81/110   73.6%     55.2    0.000456
 | `llm_openrouter.py` | LLM client for OpenRouter (synchronous). Run directly for a smoke test. |
 | `llm_doubleword.py` | LLM client for Doubleword Batch API (async, uses `autobatcher`). |
 | `extraction_and_prompt_example.py` | Simple single-model extraction loop, good for prompt experiments. |
-| `extractor_openrouter.py` | OpenRouter extraction runner. Pass model name(s) as args; no args runs all. |
-| `extractor_doubleword.py` | Doubleword batch extraction runner. Submits all rows in parallel via `asyncio.gather`. Supports `--completion-window` and `--batch-size` flags. |
+| `extractor.py` | Unified extraction runner. Auto-detects backend from model prefix (`dw-*` → Doubleword batch, others → OpenRouter). Supports `--completion-window`, `--batch-size`, and `--all-doubleword` flags. |
 | `score.py` | Scorer with time/cost columns. No args → ranked leaderboard; pass a filename → verbose diff. |
 | `utils.py` | Shared helpers (`extract_from_triple_backticks`, `sanitize_error_message`). |
 | `config_models_openrouter.py` | OpenRouter model registry — 40+ models organised by tier. |

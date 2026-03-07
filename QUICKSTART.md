@@ -37,7 +37,7 @@ OPENROUTER_API_KEY=sk-or-v1-...
 DOUBLEWORD_API_KEY=your-doubleword-api-key-here   # optional, for batch extraction
 ```
 
-The OpenRouter key is required. The Doubleword key is only needed if you want to run `extractor_doubleword.py`.
+The OpenRouter key is required. The Doubleword key is only needed if you want to run `dw-*` models via `extractor.py`.
 
 ---
 
@@ -67,8 +67,9 @@ If you see the JSON block, you're ready.
 
 See `README.md` for the full end-to-end workflow. The key commands follow a consistent pattern:
 
-- **Pass a model name** → run that model only (e.g. `python extractor_openrouter.py gemini-2.0-flash`)
-- **Pass multiple model names** → run each in turn
-- **Pass no args** → run all models; already-completed runs are skipped (idempotent)
+- **Pass a model name** → run that model only (e.g. `python extractor.py gemini-2.0-flash`)
+- **Pass multiple model names** → run each in turn (backend auto-detected per model)
+- **Pass no args** → run all OpenRouter models; already-completed runs are skipped (idempotent)
+- **Use `--all-doubleword`** → run all Doubleword batch models instead
 
 The same applies to `score.py`: no args scores all models and prints a leaderboard; pass a filename for a verbose diff of one model.

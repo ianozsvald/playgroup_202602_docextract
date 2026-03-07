@@ -2,11 +2,14 @@ import csv
 import glob
 import sys
 
-from config_models_openrouter import VALUE_MODELS
+from config_models_doubleword import DOUBLEWORD_MODELS
+from config_models_openrouter import OPENROUTER_MODELS
+
+ALL_MODELS = {**OPENROUTER_MODELS, **DOUBLEWORD_MODELS}
 
 
 def _mod_tag(model_name):
-    cfg = VALUE_MODELS.get(model_name)
+    cfg = ALL_MODELS.get(model_name)
     return "MM" if cfg and cfg.get("multimodal") else "text"
 
 
@@ -90,7 +93,7 @@ def _load_stats(stats_filename="data/extraction_stats.csv",
         avg_elapsed = sum(t for t, _ in known_tokens) / len(known_tokens)
         avg_prompt = 180_000  # typical total prompt tokens across 11 rows
         avg_completion = 1_500
-        for model_name, cfg in VALUE_MODELS.items():
+        for model_name, cfg in ALL_MODELS.items():
             if model_name not in stats:
                 price_in = cfg.get("price_in", 0)
                 price_out = cfg.get("price_out", 0)

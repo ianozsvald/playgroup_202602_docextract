@@ -44,13 +44,15 @@ FIELD_GROUPS = {
 
 
 def load_model_meta() -> dict:
-    """Read tier, pricing and modality info from config_models_openrouter.py's VALUE_MODELS."""
+    """Read tier, pricing and modality info from all model configs."""
     try:
-        from config_models_openrouter import VALUE_MODELS
+        from config_models_openrouter import OPENROUTER_MODELS
+        from config_models_doubleword import DOUBLEWORD_MODELS
     except ImportError:
         return {}
+    all_models = {**OPENROUTER_MODELS, **DOUBLEWORD_MODELS}
     meta = {}
-    for short_name, cfg in VALUE_MODELS.items():
+    for short_name, cfg in all_models.items():
         if not isinstance(cfg, dict):
             continue
         raw_tier = cfg.get("tier", "unknown")
@@ -139,10 +141,12 @@ def load_extraction_stats() -> dict:
         avg_prompt = 180_000   # typical total prompt tokens across 11 rows
         avg_completion = 1_500
         try:
-            from config_models_openrouter import VALUE_MODELS
+            from config_models_openrouter import OPENROUTER_MODELS
+            from config_models_doubleword import DOUBLEWORD_MODELS
+            all_models = {**OPENROUTER_MODELS, **DOUBLEWORD_MODELS}
         except ImportError:
-            VALUE_MODELS = {}
-        for model_name, cfg in VALUE_MODELS.items():
+            all_models = {}
+        for model_name, cfg in all_models.items():
             if model_name not in stats:
                 price_in = cfg.get("price_in", 0)
                 price_out = cfg.get("price_out", 0)
@@ -1182,7 +1186,7 @@ function renderEvolution(){
   const timeline = [
     {phase:'Data Preparation', commits:'8482875, bda4127, 3c4a94a', detail:'Automated Kleister-Charity data extraction. Collected 11 PDF documents (5→10→11). Built utility scripts for data prep.', icon:'📦'},
     {phase:'Format Standardisation', commits:'56eebd2', detail:'Converted expected/predicted TSV files to proper tab-delimited format. Enabled delimiter validation in score.py.', icon:'🔧'},
-    {phase:'Multi-Model Leaderboard', commits:'5523528', detail:'Added config_models_openrouter.py with 40+ model configs (tiers, pricing, multimodal flags). Built extractor_openrouter.py, score.py leaderboard, and this interactive playground. Generated extraction results for 33+ models via OpenRouter.', icon:'🏆'},
+    {phase:'Multi-Model Leaderboard', commits:'5523528', detail:'Added config_models_openrouter.py with 40+ model configs (tiers, pricing, multimodal flags). Built extractor.py, score.py leaderboard, and this interactive playground. Generated extraction results for 33+ models via OpenRouter.', icon:'🏆'},
     {phase:'Documentation', commits:'013826d', detail:'Rewrote README and QUICKSTART to cover full pipeline: extractor.py → score.py → playground.py. Documented model tiers, CLI patterns, and output files.', icon:'📖'},
     {phase:'Model Cleanup & Refactor', commits:'66dd9d5', detail:'Removed 8 unavailable models (deepseek-r1-free, gpt-oss-120b-free, gemini-flash-free, etc.). Deleted stale TSVs. Added extraction call log tracking. Refactored LLM provider selection.', icon:'🧹'},
     {phase:'Security Hardening', commits:'1fad564', detail:'Added sanitize_error_message() to scrub user_id/API keys from all logs and TSV outputs before writing to disk.', icon:'🔒'},
