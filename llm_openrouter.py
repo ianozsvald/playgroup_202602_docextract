@@ -6,9 +6,9 @@ import time
 from dotenv import load_dotenv
 from openai import OpenAI
 import utils
+from utils import get_logger
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger = get_logger(__name__)
 _fh = logging.FileHandler("llm_openrouter_calls.log")
 _fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
 logger.addHandler(_fh)
@@ -102,13 +102,13 @@ def call_llm(model_name, prompt_template, extracted_text, max_ctx_tokens=None):
 
 if __name__ == "__main__":
     key = os.getenv('OPENROUTER_API_KEY', '')
-    print(f"OpenRouter API key: {'set (' + key[:4] + '...)' if key else 'NOT SET'}")
+    logger.info("OpenRouter API key: %s", f"set ({key[:4]}...)" if key else "NOT SET")
 
     #model_name = "deepseek/deepseek-v3.2-speciale"
     #model_name = "z-ai/glm-4.7"  # slow
     #model_name = "anthropic/claude-3-haiku" # failed to give the right answer to the q below
     model_name = "anthropic/claude-3.5-haiku"
-    print(f"Using model: {model_name}")
+    logger.info("Using model: %s", model_name)
 
     prompt_template = """
     You are an expert at extracting information from UK charity financial documents.
@@ -134,5 +134,5 @@ if __name__ == "__main__":
              prompt_template,
              extracted_text
     )
-    print(result["text"])
-    print(f"Time: {result['elapsed_secs']}s, Tokens: {result['prompt_tokens']}in/{result['completion_tokens']}out")
+    logger.info("Result: %s", result["text"])
+    logger.info("Time: %ss, Tokens: %din/%dout", result['elapsed_secs'], result['prompt_tokens'], result['completion_tokens'])

@@ -9,6 +9,9 @@ Output: playground.html  (open in any browser, fully self-contained)
 import csv
 import json
 from pathlib import Path
+from utils import get_logger
+
+log = get_logger("playground")
 
 DATA_DIR = Path("data")
 EXPECTED_FILE = DATA_DIR / "playgroup_dev_expected.tsv"
@@ -303,7 +306,9 @@ def main():
         models_data[model_name] = scores
         model_providers[model_name] = provider
         mm_tag = "MM" if model_meta.get(model_name, {}).get("multimodal") else "text"
-        print(f"  [{provider}] {model_name:35s}  {mm_tag:<6}  {scores['accuracy']:5.1%}  ({scores['total_correct']}/{scores['total_expected']})")
+        log.info("  [%s] %s  %s  %.1f%%  (%d/%d)",
+                 provider, f"{model_name:35s}", f"{mm_tag:<6}",
+                 scores['accuracy'] * 100, scores['total_correct'], scores['total_expected'])
     payload = {
         "models": models_data,
         "fields": FIELDS,
@@ -318,7 +323,7 @@ def main():
 
     html = HTML_TEMPLATE.replace("/*__DATA__*/null", json.dumps(payload))
     OUTPUT_FILE.write_text(html)
-    print(f"\nWrote {OUTPUT_FILE}  —  open in your browser")
+    log.info("Wrote %s  —  open in your browser", OUTPUT_FILE)
 
 
 # ── HTML Template ─────────────────────────────────────────────────────────────

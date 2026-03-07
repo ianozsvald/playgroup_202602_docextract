@@ -8,6 +8,7 @@ import argparse
 import asyncio
 import csv
 import json
+import logging
 import os
 import sys
 from datetime import datetime
@@ -15,7 +16,9 @@ from datetime import datetime
 import llm_openrouter
 from config_models_doubleword import DOUBLEWORD_MODELS
 from config_models_openrouter import OPENROUTER_MODELS
-from utils import sanitize_error_message
+from utils import get_logger, sanitize_error_message
+
+log = get_logger("extractor")
 
 IN_FILENAME = "data/playgroup_dev_in.tsv"
 STATS_FILENAME = "data/extraction_stats.csv"
@@ -158,25 +161,25 @@ def _append_stats(provider, model_short_name, model_cfg, total, rows_with_values
         if write_header:
             writer.writeheader()
         writer.writerow(row)
-    print(f"  Stats appended to {STATS_FILENAME}")
+    log.debug("Stats appended to %s", STATS_FILENAME)
 
 
 def _print_summary(provider, model_short_name, multimodal, rows_with_values, rows_empty, field_counts,
                     total_elapsed_secs=None, total_prompt_tokens=None, total_completion_tokens=None, total_cost_usd=None):
     total = rows_with_values + rows_empty
-    print(f"\n--- [{provider}] {model_short_name} {_mod_tag(multimodal)} summary ---")
-    print(f"  Rows with values : {rows_with_values}/{total}")
-    print(f"  Rows empty       : {rows_empty}/{total}")
+    log.info("[%s] %s %s summary", provider, model_short_name, _mod_tag(multimodal))
+    log.info("  Rows with values : %d/%d", rows_with_values, total)
+    log.info("  Rows empty       : %d/%d", rows_empty, total)
     if total_elapsed_secs is not None:
-        print(f"  Total time       : {total_elapsed_secs:.1f}s")
+        log.info("  Total time       : %.1fs", total_elapsed_secs)
     if total_prompt_tokens is not None:
-        print(f"  Total tokens     : {total_prompt_tokens} in / {total_completion_tokens} out")
+        log.info("  Total tokens     : %d in / %d out", total_prompt_tokens, total_completion_tokens)
     if total_cost_usd is not None:
-        print(f"  Total cost       : ${total_cost_usd:.6f}")
+        log.info("  Total cost       : $%.6f", total_cost_usd)
     if field_counts:
-        print("  Fields found (out of rows with values):")
+        log.info("  Fields found (out of rows with values):")
         for field, count in sorted(field_counts.items()):
-            print(f"    {field}: {count}/{rows_with_values}")
+            log.info("    %s: %d/%d", field, count, rows_with_values)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -192,11 +195,11 @@ def _run_openrouter(model_short_name):
     out_filename = f"data/playgroup_dev_extracted__openrouter__{model_short_name}.tsv"
 
     if os.path.exists(out_filename):
-        print(f"[OpenRouter] Skipping {model_short_name} {_mod_tag(multimodal)}: {out_filename} already exists")
+        log.warning("[OpenRouter] Skipping %s %s: %s already exists", model_short_name, _mod_tag(multimodal), out_filename)
         return "skipped"
 
-    print(f"\n[OpenRouter] Model: {model_short_name} ({model}) {_mod_tag(multimodal)}")
-    print(f"[OpenRouter] Output: {out_filename}")
+    log.info("[OpenRouter] Model: %s (%s) %s", model_short_name, model, _mod_tag(multimodal))
+    log.info("[OpenRouter] Output: %s", out_filename)
 
     price_in = model_cfg.get("price_in", 0)
     price_out = model_cfg.get("price_out", 0)
@@ -216,7 +219,7 @@ def _run_openrouter(model_short_name):
             assert len(row) == 6, f"Expected 6 cols, got {len(row)} in row {row_num}"
             pdf_filename, _keys, text_djvu2hocr, text_tesseract411, text_tesseractmarch2020, text_combined = row
 
-            print(f"[OpenRouter] Processing row {row_num}: {pdf_filename}")
+            log.info("[OpenRouter] Processing row %d: %s", row_num, pdf_filename)
             call_log_base = {
                 "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "provider": "OpenRouter",
@@ -235,7 +238,7 @@ def _run_openrouter(model_short_name):
                 line = f"error={error_msg}"
                 outfile.write(line + "\n")
                 rows_empty += 1
-                print(f"  [OpenRouter] -> ERROR: {error_msg[:120]}")
+                log.error("[OpenRouter] -> ERROR: %s", error_msg[:120])
                 _append_call_log({**call_log_base, "status": "error", "elapsed_secs": 0,
                                   "prompt_tokens": 0, "completion_tokens": 0, "cost_usd": 0,
                                   "fields_extracted": 0, "error": error_msg[:500]})
@@ -252,12 +255,12 @@ def _run_openrouter(model_short_name):
 
             if fields:
                 rows_with_values += 1
-                print(f"  [OpenRouter] -> {line[:100]}  [{result['elapsed_secs']}s, ${row_cost:.6f}]")
+                log.info("  [OpenRouter] -> %s  [%ss, $%.6f]", line[:100], result['elapsed_secs'], row_cost)
                 for key in fields:
                     field_counts[key] = field_counts.get(key, 0) + 1
             else:
                 rows_empty += 1
-                print(f"  [OpenRouter] -> (no values extracted)  [{result['elapsed_secs']}s]")
+                log.warning("  [OpenRouter] -> (no values extracted)  [%ss]", result['elapsed_secs'])
 
             _append_call_log({**call_log_base, "status": "ok" if fields else "empty",
                               "elapsed_secs": result["elapsed_secs"],
@@ -349,12 +352,12 @@ def _write_doubleword_results(model_short_name, results, rows, elapsed_secs):
 
             if fields:
                 rows_with_values += 1
-                print(f"  [Doubleword] {model_short_name} row {row_num} -> {line[:100]}  [${row_cost:.6f}]")
+                log.info("  [Doubleword] %s row %d -> %s  [$%.6f]", model_short_name, row_num, line[:100], row_cost)
                 for key in fields:
                     field_counts[key] = field_counts.get(key, 0) + 1
             else:
                 rows_empty += 1
-                print(f"  [Doubleword] {model_short_name} row {row_num} -> (no values extracted)")
+                log.warning("  [Doubleword] %s row %d -> (no values extracted)", model_short_name, row_num)
 
             _append_call_log({**call_log_base, "status": "ok" if fields else "empty",
                               "elapsed_secs": 0, "prompt_tokens": prompt_tokens,
@@ -397,7 +400,7 @@ async def _run_all_doubleword(models_to_run, completion_window="1h"):
         out_filename = f"data/playgroup_dev_extracted__doubleword__{model_short_name}.tsv"
 
         if os.path.exists(out_filename):
-            print(f"[Doubleword] Skipping {model_short_name} {_mod_tag(multimodal)}: {out_filename} already exists")
+            log.warning("[Doubleword] Skipping %s %s: %s already exists", model_short_name, _mod_tag(multimodal), out_filename)
             statuses[model_short_name] = "skipped"
             continue
 
@@ -410,13 +413,13 @@ async def _run_all_doubleword(models_to_run, completion_window="1h"):
     for model_short_name in to_submit:
         model_cfg = DOUBLEWORD_MODELS[model_short_name]
         multimodal = model_cfg["multimodal"]
-        print(f"[Doubleword] Submitting {model_short_name} ({model_cfg['model']}) "
-              f"{_mod_tag(multimodal)}, {len(rows)} rows, window={completion_window}")
+        log.info("[Doubleword] Submitting %s (%s) %s, %d rows, window=%s",
+                 model_short_name, model_cfg['model'], _mod_tag(multimodal), len(rows), completion_window)
         batch_id = await llm_doubleword.submit_batch(
             client, model_short_name, model_cfg["model"],
             PROMPT_TEMPLATE, rows, completion_window,
         )
-        print(f"[Doubleword] Submitted {model_short_name}: batch {batch_id}")
+        log.info("[Doubleword] Submitted %s: batch %s", model_short_name, batch_id)
         pending[model_short_name] = batch_id
         submitted_at[model_short_name] = time.time()
 
@@ -430,28 +433,28 @@ async def _run_all_doubleword(models_to_run, completion_window="1h"):
         try:
             status, _, counts = await llm_doubleword.poll_batch(client, batch_id)
         except Exception as e:
-            print(f"[Doubleword] Could not retrieve batch {batch_id} for {model_short_name}: {e}")
+            log.error("[Doubleword] Could not retrieve batch %s for %s: %s", batch_id, model_short_name, e)
             llm_doubleword.remove_checkpoint_entry(model_short_name)
             continue
 
         if status in ("completed", "in_progress", "validating", "finalizing"):
             multimodal = DOUBLEWORD_MODELS[model_short_name]["multimodal"]
-            print(f"[Doubleword] Resuming {model_short_name} {_mod_tag(multimodal)}: "
-                  f"batch {batch_id} ({status}, {counts['completed']}/{counts['total']})")
+            log.info("[Doubleword] Resuming %s %s: batch %s (%s, %s/%s)",
+                     model_short_name, _mod_tag(multimodal), batch_id, status, counts['completed'], counts['total'])
             resumed_pending[model_short_name] = batch_id
             submitted_at[model_short_name] = cp_entry.get("submitted_at", time.time())
         else:
-            print(f"[Doubleword] Batch {batch_id} for {model_short_name} is {status}, resubmitting")
+            log.warning("[Doubleword] Batch %s for %s is %s, resubmitting", batch_id, model_short_name, status)
             llm_doubleword.remove_checkpoint_entry(model_short_name)
             model_cfg = DOUBLEWORD_MODELS[model_short_name]
             multimodal = model_cfg["multimodal"]
-            print(f"[Doubleword] Submitting {model_short_name} ({model_cfg['model']}) "
-                  f"{_mod_tag(multimodal)}, {len(rows)} rows, window={completion_window}")
+            log.info("[Doubleword] Submitting %s (%s) %s, %d rows, window=%s",
+                     model_short_name, model_cfg['model'], _mod_tag(multimodal), len(rows), completion_window)
             batch_id = await llm_doubleword.submit_batch(
                 client, model_short_name, model_cfg["model"],
                 PROMPT_TEMPLATE, rows, completion_window,
             )
-            print(f"[Doubleword] Submitted {model_short_name}: batch {batch_id}")
+            log.info("[Doubleword] Submitted %s: batch %s", model_short_name, batch_id)
             pending[model_short_name] = batch_id
             submitted_at[model_short_name] = time.time()
 
@@ -459,7 +462,7 @@ async def _run_all_doubleword(models_to_run, completion_window="1h"):
     pending = {**resumed_pending, **pending}
 
     if not pending:
-        print("[Doubleword] All models already complete, nothing to do")
+        log.info("[Doubleword] All models already complete, nothing to do")
         await client.close()
         return statuses
 
@@ -468,18 +471,18 @@ async def _run_all_doubleword(models_to_run, completion_window="1h"):
     total_models = len(pending)
     completed_models = 0
     failed_models = 0
-    print(f"\n[Doubleword] Polling {total_models} batch(es)...")
+    log.info("[Doubleword] Polling %d batch(es)...", total_models)
 
     while pending:
         await asyncio.sleep(DOUBLEWORD_POLL_INTERVAL)
         done = []
-        poll_summary = []  # collect per-model status for big-picture print
+        poll_summary = []
 
         for model_short_name, batch_id in pending.items():
             try:
                 status, output_file_id, counts = await llm_doubleword.poll_batch(client, batch_id)
             except Exception as e:
-                print(f"  [{model_short_name}] Poll error: {e}")
+                log.error("[%s] Poll error: %s", model_short_name, e)
                 poll_summary.append(f"{model_short_name}:error")
                 continue
 
@@ -494,7 +497,7 @@ async def _run_all_doubleword(models_to_run, completion_window="1h"):
                 completed_models += 1
                 statuses[model_short_name] = "completed"
             elif status in ("failed", "expired", "cancelled"):
-                print(f"  [{model_short_name}] Batch {status} — will need manual resubmission")
+                log.error("[%s] Batch %s — will need manual resubmission", model_short_name, status)
                 llm_doubleword.remove_checkpoint_entry(model_short_name)
                 done.append(model_short_name)
                 failed_models += 1
@@ -503,14 +506,13 @@ async def _run_all_doubleword(models_to_run, completion_window="1h"):
         for m in done:
             del pending[m]
 
-        # Big-picture progress
+        # Big-picture progress (debug-level to reduce noise during polling)
         remaining = len(pending)
-        print(f"  [Progress] {completed_models}/{total_models} done, "
-              f"{remaining} pending, {failed_models} failed  |  "
-              + "  ".join(poll_summary))
+        log.debug("[Polling] %d/%d done, %d pending, %d failed  |  %s",
+                  completed_models, total_models, remaining, failed_models, "  ".join(poll_summary))
 
     await client.close()
-    print(f"[Doubleword] All batches complete ({completed_models} succeeded, {failed_models} failed)")
+    log.info("[Doubleword] All batches complete (%d succeeded, %d failed)", completed_models, failed_models)
     return statuses
 
 
@@ -532,15 +534,15 @@ def _print_provider_plan(provider, models, checkpoint=None):
         else:
             to_run.append(m)
 
-    print(f"\n--- [{provider.capitalize()}] {len(models)} models ---")
+    log.info("[%s] %d models", provider.capitalize(), len(models))
     if to_run:
-        print(f"  Will run  : {', '.join(to_run)}")
+        log.info("  Will run  : %s", ", ".join(to_run))
     if to_resume:
-        print(f"  Resuming  : {', '.join(to_resume)}")
+        log.info("  Resuming  : %s", ", ".join(to_resume))
     if to_skip:
-        print(f"  Skipping  : {', '.join(to_skip)} (output exists)")
+        log.warning("  Skipping  : %s (output exists)", ", ".join(to_skip))
     if not to_run and not to_resume:
-        print(f"  Nothing to do (all skipped)")
+        log.warning("  Nothing to do (all skipped)")
 
 
 def _print_run_summary(all_statuses):
@@ -553,23 +555,24 @@ def _print_run_summary(all_statuses):
     for (provider, model), status in all_statuses.items():
         by_status.setdefault(status, []).append((provider, model))
 
-    print(f"\n{'='*60}")
-    print("Run Summary")
-    print(f"{'='*60}")
+    log.info("=" * 60)
+    log.info("Run Summary")
+    log.info("=" * 60)
     for status in ("completed", "skipped", "failed", "cancelled", "expired", "unknown"):
         models = by_status.get(status, [])
         if not models:
             continue
         label = status.capitalize().ljust(10)
         model_list = ", ".join(f"{m} ({p})" for p, m in models)
-        print(f"  {label}: {model_list}")
+        level = logging.ERROR if status in ("failed", "cancelled", "expired", "unknown") else logging.INFO
+        log.log(level, "  %s: %s", label, model_list)
 
     total = len(all_statuses)
     completed = len(by_status.get("completed", []))
     skipped = len(by_status.get("skipped", []))
     failed_count = sum(len(by_status.get(s, [])) for s in ("failed", "cancelled", "expired", "unknown"))
-    print(f"\n  Total: {total}  |  Completed: {completed}  |  Skipped: {skipped}  |  Failed: {failed_count}")
-    print(f"{'='*60}")
+    log.info("  Total: %d  |  Completed: %d  |  Skipped: %d  |  Failed: %d", total, completed, skipped, failed_count)
+    log.info("=" * 60)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -584,9 +587,9 @@ def _resolve_model(model_short_name):
         return "openrouter"
     available_or = ", ".join(f"{k}{_mod_tag(OPENROUTER_MODELS[k]['multimodal'])}" for k in OPENROUTER_MODELS)
     available_dw = ", ".join(f"{k}{_mod_tag(DOUBLEWORD_MODELS[k]['multimodal'])}" for k in DOUBLEWORD_MODELS)
-    print(f"Unknown model '{model_short_name}'.")
-    print(f"  OpenRouter models: {available_or}")
-    print(f"  Doubleword models: {available_dw}")
+    log.error("Unknown model '%s'.", model_short_name)
+    log.error("  OpenRouter models: %s", available_or)
+    log.error("  Doubleword models: %s", available_dw)
     sys.exit(1)
 
 
@@ -626,9 +629,9 @@ async def main():
             or_models.append(model_short_name)
 
     # Print run plan
-    print(f"\n{'='*60}")
-    print(f"Extraction run: {len(or_models)} OpenRouter + {len(dw_models)} Doubleword models")
-    print(f"{'='*60}")
+    log.info("=" * 60)
+    log.info("Extraction run: %d OpenRouter + %d Doubleword models", len(or_models), len(dw_models))
+    log.info("=" * 60)
 
     if or_models:
         _print_provider_plan("openrouter", or_models)
@@ -640,18 +643,18 @@ async def main():
 
     # Run OpenRouter models sequentially (sync, one row at a time)
     if or_models:
-        print(f"\n{'─'*60}")
-        print(f"Starting OpenRouter ({len(or_models)} models)")
-        print(f"{'─'*60}")
+        log.info("-" * 60)
+        log.info("Starting OpenRouter (%d models)", len(or_models))
+        log.info("-" * 60)
         for model_short_name in or_models:
             status = _run_openrouter(model_short_name)
             all_statuses[("openrouter", model_short_name)] = status or "failed"
 
     # Run all Doubleword models as one batch: submit all, then poll all
     if dw_models:
-        print(f"\n{'─'*60}")
-        print(f"Starting Doubleword ({len(dw_models)} models)")
-        print(f"{'─'*60}")
+        log.info("-" * 60)
+        log.info("Starting Doubleword (%d models)", len(dw_models))
+        log.info("-" * 60)
         dw_statuses = await _run_all_doubleword(dw_models, args.completion_window) or {}
         for model_short_name in dw_models:
             all_statuses[("doubleword", model_short_name)] = dw_statuses.get(model_short_name, "unknown")

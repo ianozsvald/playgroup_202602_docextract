@@ -13,9 +13,9 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
 import utils
+from utils import get_logger
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger = get_logger(__name__)
 _fh = logging.FileHandler("llm_doubleword_calls.log")
 _fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
 logger.addHandler(_fh)
