@@ -1,46 +1,250 @@
+# UK Charity Document Extraction — Multi-Model Benchmark
 
-# Setup
+Extract structured fields from UK charity financial PDFs using LLMs via [OpenRouter](https://openrouter.ai/) or the [Doubleword Batch API](https://docs.doubleword.ai/batches/getting-started-with-batched-api), then score and rank the results across 40+ models.
 
-Read `QUICKSTART.md` to get going.
+**Jump to:** [Key Findings](#key-findings) | [Setup](#setup) | [Workflow](#end-to-end-workflow) | [Results](#results) | [Repo Reference](#whats-in-this-repo) | [Dataset](#dataset)
 
-You should be able to run
-* `llm_openrouter.py` and it'll try to extract a fact from a canned bit of text. If this works and you get some JSON, you're in a good state.
-* `extraction_and_prompt_example.py` and it'll read the input tsv (see below), run a simple prompt and extract something.
+> **Who is this for?**
+>
+> - **Playgroup attendees** — start with [QUICKSTART.md](QUICKSTART.md), then follow the [Workflow](#end-to-end-workflow) section below.
+> - **Curious explorers** — read the [Key Findings](#key-findings) and open the [interactive playground](which-models-extracted-playground.html) to browse results without running any code.
+> - **Contributors / extenders** — see [Repo Reference](#whats-in-this-repo) for the full file map and how pieces connect.
+> - **Doubleword team** — see [Key Findings](#key-findings) for benchmark results, the [Doubleword Batch API](#doubleword-batch-api-configmodelsdoublewordpy) tier table, and note the [data gap](#data-gap-doubleword-batch-api) on time/cost reporting.
 
-# What's here
+---
 
-Locally you've got a small export from the much larger https://github.com/applicaai/kleister-charity# dataset. I've taken a small set of PDFs and the relevant exports of text that they've provided (using djvu2hocr, tesseract 4.11, tesseract from march 2020, a combination of all 3). The chosen pdfs come from the `dev-0` folder. 
+## Key Findings
 
-The PDFs start smaller (<= 20 pages) and get bigger towards the end of the set.
+> Last updated: 2026-03-07 — 47 models tested (40+ OpenRouter, 7 Doubleword).
 
-The PDFs are drawn from a heterogenous collection of UK charity financial documents, from a corpus of circa 3,000 documents of length up to 200 pages.
+**Provider summary** (active = models with F1 > 0):
 
-In `data` we have
-* `playgroup_dev_in.tsv` based on `in.tsv`
-* `playgroup_dev_expected.tsv` based on `expected.tsv`
-* `pdf_names.txt` which lists each pdf name in the same order as `in|expected.tsv` files.
+| Provider | Models | Active | Failed | Avg F1 | Best F1 | Best Model | Avg Fields |
+|----------|--------|--------|--------|--------|---------|------------|------------|
+| Doubleword | 7 | 6 | 1 | 0.888 | 0.927 | dw-qwen3.5-9b | 69.9/85 (82%) |
+| OpenRouter | 40 | 27 | 13 | 0.753 | 0.946 | gemini-3-pro | 56.0/85 (66%) |
 
-# Tasks
+Doubleword has a higher average F1 (0.888 vs 0.753) and a much lower failure rate (14% vs 33%), though OpenRouter's best model (`gemini-3-pro`) holds the overall top score. OpenRouter's average is dragged down by free-tier models that universally failed on this task.
 
-Here you have a handful of shorter PDFs. Imagine you have 1000s of varying lengths (up to 200 pages) - you want a fast and _inexpensive_ solution that'll scale. What's the best system you can build, without using super-expensive frontier models, that might scale? Where are the limits?
+**Top 5 models by F1 score:**
 
-* run `llm_router.py` and check it is working with your `.env`
-* run `extract_and_prompt_example.py` to check a prompt works and something is extracted
-* you want to extract
-  * charity number
-  * reporting date (YYYY-MM-DD)
-  * annual income (GBP) for the most recent year
-  * annual outgoings (GBP) for the most recent year
-  * post code for the charity address
-  * other fields are a bonus
-* ...
-* build an extractor for the input files that generates an output file similar to `playgroup_dev_expected.tsv` maybe called `playgroup_dev_extracted.tsv`
-* try `score.py` (it is a simple Accuracy based scorer, hardcoded filenames, very simple)
-* either try their evaluation (https://github.com/applicaai/kleister-charity?tab=readme-ov-file#evaluation) or modify `score.py`
-  * consider how close everything should be
-  * `geval` with BLEU, WER (word error rate), CER (character error rate) etc is pretty interesting
-  * maybe we want a different metric like BLEU on some fields? We should discuss
+| Rank | Model | Provider | F1 | Precision | Recall | Fields Found |
+|------|-------|----------|----|-----------|--------|-------------|
+| 1 | gemini-3-pro | OpenRouter | 0.946 | 0.975 | 0.918 | 78/85 (92%) |
+| 2 | qwen3-235b | OpenRouter | 0.937 | 0.975 | 0.902 | 77/85 (90%) |
+| 3 | dw-qwen3.5-9b | Doubleword | 0.927 | 0.974 | 0.885 | 75/85 (88%) |
+| 4 | gemini-3-flash | OpenRouter | 0.926 | 0.962 | 0.893 | 76/85 (89%) |
+| 5 | gemini-2.5-flash | OpenRouter | 0.922 | 0.962 | 0.885 | 75/85 (88%) |
 
-# License
+**Takeaways:**
 
-* The data is UK open data see https://github.com/applicaai/kleister-charity/issues/2
+- **Doubleword's cheapest model topped the value chart.** `dw-qwen3.5-9b` (ultra_cheap tier, $0.04/M input) ranked 3rd overall at 0.927 F1, outperforming premium models like `mistral-large` and `claude-3.5-haiku`.
+- **6 of 7 Doubleword models produced usable results**, with F1 scores from 0.844 (`dw-qwen3-14b`) to 0.927 (`dw-qwen3.5-9b`). The only failure was `dw-qwen3.5-397b` which returned empty results.
+- **Free-tier models universally failed** on this task — all 14 zero-score models are either free-tier or had context/format issues. This includes `llama-3.3-70b-free`, `gemma-3-27b-free`, `gemma-3n-free`, and others.
+- **Precision is consistently high across scoring models** (0.96–0.97), meaning when models extract a field, they're usually correct. The differentiator is recall — whether they find all fields.
+- **The hardest fields** are `income_annually_in_british_pounds` and `spending_annually_in_british_pounds` — even top models miss these on some documents.
+
+For the full interactive breakdown (field heatmaps, per-document analysis, error patterns, provider comparisons), open the **[Model Extraction Playground](which-models-extracted-playground.html)** locally in a browser. It has 8 tabs: Rankings, Field Heatmap, Document Analysis, Error Breakdown, Deep Dive, Recommendations, Provider Analysis, and Project Evolution.
+
+### Data Gap: Doubleword Batch API
+
+The Doubleword Batch API does not return per-request elapsed time or cost in batch results. All Doubleword entries in `data/extraction_stats.csv` show `total_elapsed_secs=0.0` and `total_cost_usd=0.0`. This means time and cost comparisons in the leaderboard are only available for OpenRouter models.
+
+---
+
+## Results
+
+Results are generated by `score.py` and stored in `data/`. To reproduce or update:
+
+```bash
+# Full leaderboard (all extracted models)
+python score.py
+
+# Verbose diff for one model
+python score.py data/playgroup_dev_extracted__openrouter__gemini-2.0-flash.tsv
+```
+
+The key result files:
+
+| File | What it shows |
+|---|---|
+| `data/extraction_stats.csv` | One row per model run: provider, tier, row counts, per-field hit rates, time, cost |
+| [which-models-extracted-playground.html](which-models-extracted-playground.html) | Interactive playground — open in browser for charts, heatmaps, and recommendations |
+
+The leaderboard printed by `score.py` is ranked by F1 and includes precision, recall, field counts, time, and cost:
+
+```
+Provider     Model                     Mod    Docs     F1   Prec  Recall          Fields    Time(s)    Cost($)
+--------------------------------------------------------------------------------------------------------------
+openrouter   gemini-3-pro              MM       11  0.946  0.975   0.918     78/85 (92%)     ~629.1    ~0.3780
+openrouter   qwen3-235b                text     11  0.937  0.975   0.902     77/85 (90%)     ~629.1    ~0.0258
+doubleword   dw-qwen3.5-9b             text     11  0.927  0.974   0.885     75/85 (88%)        n/a        n/a
+...
+```
+
+> **To update results:** run `python extractor.py` to extract with any new/missing models, then `python score.py` to regenerate the leaderboard. Regenerate the playground HTML with `python playground.py`.
+
+---
+
+## Setup
+
+See [`QUICKSTART.md`](QUICKSTART.md) for the full pre-event setup checklist (Python version, venv, pip install, `.env` with API keys).
+
+---
+
+## End-to-End Workflow
+
+### 1. Smoke test
+
+Verify your setup works before running anything else:
+
+```bash
+python llm_openrouter.py
+```
+
+Expected output — a JSON block with a charity number extracted from canned text:
+
+```json
+{"Registered Charity Number": "1132766"}
+```
+
+### 2. Try a simple prompt on the dataset
+
+```bash
+python extraction_and_prompt_example.py
+```
+
+Reads `data/playgroup_dev_in.tsv`, sends each row to `claude-3.5-haiku`, and prints the raw extracted JSON. Good for experimenting with prompts.
+
+### 3. Run extraction across one or more models
+
+Pass one or more model names as arguments, or omit to run all models. The backend is auto-detected: `dw-*` models use the Doubleword Batch API (async, parallel), all others use OpenRouter (sync, sequential). Runs are idempotent — if the output file already exists for a model, that model is skipped.
+
+```bash
+# One OpenRouter model
+python extractor.py gemini-2.0-flash
+
+# Several OpenRouter models
+python extractor.py gemini-2.0-flash deepseek-v3 llama-3.3-70b-free
+
+# All models from both providers (default)
+python extractor.py
+
+# All OpenRouter models only
+python extractor.py --all-openrouter
+
+# One Doubleword model (auto-detected by dw- prefix)
+python extractor.py dw-qwen3-vl-30b
+
+# Mix both backends in one command
+python extractor.py gemini-2.0-flash dw-qwen3-14b
+
+# All Doubleword models with 24h window (cheapest)
+python extractor.py --all-doubleword --completion-window 24h
+```
+
+Each run prints a per-provider plan (which models will run, skip, or resume) then executes extraction. On completion it prints a combined summary with completed/skipped/failed counts. Output files: `data/playgroup_dev_extracted__<provider>__<model-name>.tsv`, `data/extraction_stats.csv` (provider, row counts, per-field hit rates, time and cost), and `data/extraction_call_log.csv` (per-row details).
+
+### 4. Score and rank all models
+
+```bash
+# Ranked leaderboard across all extracted files
+python score.py
+
+# Verbose diff for one model
+python score.py data/playgroup_dev_extracted__openrouter__gemini-2.0-flash.tsv
+```
+
+---
+
+## What's in This Repo
+
+### Scripts
+
+| File | Purpose |
+|---|---|
+| `llm_openrouter.py` | LLM client for OpenRouter (synchronous). Run directly for a smoke test. |
+| `llm_doubleword.py` | LLM client for Doubleword Batch API (async, direct batch management with checkpoint/resume). |
+| `extraction_and_prompt_example.py` | Simple single-model extraction loop, good for prompt experiments. |
+| `extractor.py` | Unified extraction runner. Auto-detects backend from model prefix (`dw-*` → Doubleword batch, others → OpenRouter). Doubleword models are submitted in parallel and polled with checkpoint/resume. Prints a per-provider run plan at start and a combined summary at end (completed/skipped/failed counts). Supports `--completion-window`, `--all-doubleword`, and `--all-openrouter` flags. |
+| `score.py` | Scorer with F1/Precision/Recall. No args → ranked leaderboard; pass a filename → verbose field-by-field diff. |
+| `utils.py` | Shared helpers (`extract_from_triple_backticks`, `sanitize_error_message`). |
+| `config_models_openrouter.py` | OpenRouter model registry — 40+ models organised by tier. |
+| `config_models_doubleword.py` | Doubleword model registry — 7 models with batch pricing from [docs](https://docs.doubleword.ai/batches/model-pricing). |
+| `playground.py` | Generates the interactive HTML playground from extraction results. |
+
+### Model Tiers
+
+#### OpenRouter (`config_models_openrouter.py`)
+
+Models are grouped into four tiers by cost (per million input tokens):
+
+| Tier | Cost | Examples |
+|---|---|---|
+| `free` | $0 | `llama-3.3-70b-free`, `gemma-3-27b-free`, `gemma-3n-free` |
+| `ultra_cheap` | < $0.30 | `gemini-2.0-flash`, `deepseek-v3`, `qwen-2.5-vl-7b` |
+| `great_value` | $0.30–$1.00 | `claude-3.5-haiku`, `qwen-2.5-vl-72b`, `deepseek-r1` |
+| `premium` | > $1.00 | `gemini-3-pro`, `pixtral-large`, `mistral-large` |
+
+#### Doubleword Batch API (`config_models_doubleword.py`)
+
+Prefixed with `dw-`. Pricing is for the 1h batch tier (24h is 30-50% cheaper):
+
+| Tier | Cost | Examples |
+|---|---|---|
+| `ultra_cheap` | < $0.05 | `dw-qwen3.5-9b`, `dw-qwen3-14b`, `dw-gpt-oss-20b` |
+| `great_value` | $0.05–$0.15 | `dw-qwen3.5-35b`, `dw-qwen3-vl-30b` |
+| `premium` | > $0.15 | `dw-qwen3.5-397b`, `dw-qwen3-vl-235b` |
+
+Each model entry includes: model ID, `multimodal` flag, supported modalities, context length, and notes.
+
+### Data (`data/`)
+
+| File | Description |
+|---|---|
+| `playgroup_dev_in.tsv` | Input: 11 PDFs × 6 columns (filename, keys, 3 OCR text variants, combined text) |
+| `playgroup_dev_expected.tsv` | Ground truth field values |
+| `pdf_names.txt` | PDF filenames in row order |
+| `playgroup_dev_extracted__<provider>__<model>.tsv` | Per-model extraction output (one file per run) |
+| `extraction_stats.csv` | Cumulative run stats: provider, model, row counts, per-field hit rates, time, cost |
+| `extraction_call_log.csv` | Per-row call log: provider, model, row, status, elapsed time, tokens, cost |
+| `.doubleword_checkpoints.json` | Doubleword batch checkpoint: maps model → batch_id for resume on cancel/re-run |
+| `*.pdf` | 11 UK charity financial PDFs (≤ 200 pages each) |
+
+### Visualisations
+
+| File | Description |
+|---|---|
+| [which-models-extracted-playground.html](which-models-extracted-playground.html) | Interactive leaderboard — open in browser for rankings, field heatmap, document analysis, error breakdown, deep dive, recommendations, provider analysis, and project evolution |
+
+### Utility Scripts (`utility/`)
+
+| File | Description |
+|---|---|
+| `process_pdf.py` | PDF processing helper |
+| `extract_copy_kleister_charity.sh` | Shell script to copy/prepare data from the full Kleister Charity dataset |
+
+---
+
+## Dataset
+
+A small export from the [Kleister Charity dataset](https://github.com/applicaai/kleister-charity) (`dev-0` folder), using PDFs and pre-extracted OCR text (djvu2hocr, tesseract 4.11, tesseract March 2020, combined).
+
+PDFs are drawn from ~3,000 UK charity financial documents, up to 200 pages each. The 11 in this set start smaller and get longer — a useful proxy for scale testing.
+
+**Fields to extract:**
+
+- `charity_number` — registered charity number
+- `charity_name` — full charity name
+- `report_date` — period end date (YYYY-MM-DD)
+- `income_annually_in_british_pounds` — total annual income
+- `spending_annually_in_british_pounds` — total annual expenditure
+- `address__postcode` — UK postcode
+- `address__post_town` — town/city
+- `address__street_line` — street address
+
+---
+
+## License
+
+Data is UK open data — see [Kleister Charity license](https://github.com/applicaai/kleister-charity/issues/2).

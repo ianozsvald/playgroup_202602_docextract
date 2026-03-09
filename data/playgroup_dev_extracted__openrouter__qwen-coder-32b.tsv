@@ -1,0 +1,11 @@
+
+
+
+
+
+
+
+
+
+
+error=Error code: 400 - {'error': {'message': 'This endpoint\'s maximum context length is 32768 tokens. However, you requested about 64603 tokens (64603 of text input). Please reduce the length of either one, or use the "middle-out" transform to compress your prompt automatically.', 'code': 400, 'metadata': {'provider_name': None}}}

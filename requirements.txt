@@ -5,3 +5,5 @@ openai
 pytest
 pre-commit
 pytest-cov
+dotenv
+autobatcher
